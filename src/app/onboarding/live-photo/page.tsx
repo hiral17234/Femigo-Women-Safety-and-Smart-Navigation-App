@@ -76,6 +76,10 @@ export default function LivePhotoPage() {
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        toast({ variant: 'destructive', title: 'Camera not ready', description: 'Please wait a moment and try again.' })
+        return
+      }
       const canvas = canvasRef.current
       canvas.width = video.videoWidth
       canvas.height = video.videoHeight
@@ -85,7 +89,7 @@ export default function LivePhotoPage() {
         context.translate(video.videoWidth, 0);
         context.scale(-1, 1);
         context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight)
-        const dataUrl = canvas.toDataURL("image/jpeg")
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.92)
         setImageDataUrl(dataUrl)
         setVerificationState("preview")
         stopCamera()
