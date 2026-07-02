@@ -191,8 +191,11 @@ export default function AadhaarVerificationPage() {
     setVerificationState("verifying")
     
     try {
-      const result = await verifyAadhaar({ aadhaarPhotoDataUri: imageDataUrl, userName });
+      const referencePhotoDataUri = localStorage.getItem("userPhotoDataUri") || undefined;
+      const result = await verifyAadhaar({ aadhaarPhotoDataUri: imageDataUrl, userName, referencePhotoDataUri });
       setVerificationResult(result);
+
+        
       if (result.verificationPassed) {
         setVerificationState("success");
         localStorage.setItem("userAadhaarDataUri", imageDataUrl);
