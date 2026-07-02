@@ -8,6 +8,20 @@ export const AadhaarVerificationInputSchema = z.object({
       "A photo of an Aadhaar card, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
     ),
   userName: z.string().describe("The user's full name, as provided during signup."),
+
+  export const AadhaarVerificationInputSchema = z.object({
+  aadhaarPhotoDataUri: z
+    .string()
+    .describe(
+      "A photo of an Aadhaar card, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
+    ),
+  userName: z.string().describe("The user's full name, as provided during signup."),
+  referencePhotoDataUri: z
+    .string()
+    .optional()
+    .describe(
+      "The user's live selfie taken during gender verification, used to compare against the Aadhaar card photo."
+    ),
 });
 export type AadhaarVerificationInput = z.infer<typeof AadhaarVerificationInputSchema>;
 
