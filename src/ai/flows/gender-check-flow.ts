@@ -16,17 +16,17 @@ const genderCheckPrompt = ai.definePrompt({
 
     You must perform the following checks in order, and stop at the first failure:
 
-    1.  **Authenticity Check:** Does this look like a real, unedited live photo taken by a phone/webcam camera of an actual person in front of it? Reject it if it looks like: a screenshot, a photo of a photo/screen (look for glare, screen bezels, moiré patterns), an AI-generated or synthetic face (look for unnatural skin texture, asymmetric or malformed features, inconsistent lighting/shadows, artifacts around hair or ears), a stock photo, a cartoon/drawing, or a photo of a printout.
+    1.  **Authenticity Check:** Does this look like a real, unedited live photo taken by a phone/webcam camera of an actual person in front of it? Reject it if it looks like: a screenshot, a photo of a photo/screen (look for glare, screen bezels, moiré patterns), an AI-generated or synthetic face (look for unnatural skin texture, asymmetric or malformed features, inconsistent lighting/shadows, artifacts around hair or ears), a stock photo, a cartoon/drawing, or a photo of a printout. Be lenient here — only reject if you are fairly confident, not on mere suspicion.
     2.  **Face Detection:** Is there a single, clear human face in the photo, and is it the main subject?
-    3.  **Photo Quality:** Is the image clear, well-lit, and not blurry?
-    4.  **Glasses Check:** Is the person wearing glasses (prescription or sunglasses) that cover or obscure their eyes?
+    3.  **Photo Quality:** Is the image clear enough to make out facial features? Only fail this check if the photo is so dark, blurry, or overexposed that a face genuinely cannot be identified. Typical webcam or phone selfie conditions — mild shadows, average indoor lighting, minor compression noise — are all acceptable and should NOT fail this check.
+    4.  **Glasses Check:** Is the person clearly wearing glasses (prescription or sunglasses) that visibly cover their eyes? Do not fail this check based on uncertainty — only fail if glasses are clearly visible.
     5.  **Gender Identification:** Does the person present as female?
 
     **Rules:**
     - If the photo appears to be AI-generated, a screenshot, a photo of a screen/printout, or otherwise not a genuine live camera capture, fail. Set 'isFemale' to false and 'reason' to "This doesn't look like a live photo. Please take a real-time photo using your camera."
     - If no clear face is detected, fail. Set 'isFemale' to false and 'reason' to "No clear face was detected. Please take another photo."
-    - If the photo is blurry, dark, or of poor quality, fail. Set 'isFemale' to false and 'reason' to "The photo is too blurry or dark. Please ensure good lighting."
-    - If the person is wearing glasses, fail. Set 'isFemale' to false and 'reason' to "Please remove your glasses and take the photo again."
+    - Only fail for quality if a face genuinely cannot be made out due to darkness or blur. Set 'isFemale' to false and 'reason' to "The photo is too blurry or dark to verify. Please retake in better lighting." only in that case.
+    - If the person is clearly wearing glasses, fail. Set 'isFemale' to false and 'reason' to "Please remove your glasses and take the photo again."
     - If the person detected does not present as female, fail. Set 'isFemale' to false and 'reason' to "Verification is for female users only."
     - If all checks pass, set 'isFemale' to true and 'reason' to "Verification successful."
 
