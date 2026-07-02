@@ -3,7 +3,7 @@ import {genkit, GenkitPlugin} from 'genkit';
 import {googleAI} from '@genkit-ai/googleai';
 
 // This is a critical fix to prevent server crashes when the API key is missing.
-const googleAiApiKey = process.env.NEXT_PUBLIC_GOOGLE_AI_KEY;
+const googleAiApiKey = process.env.GOOGLE_AI_KEY;
 const plugins: GenkitPlugin[] = [];
 
 if (googleAiApiKey && !googleAiApiKey.includes('YOUR_')) {
