@@ -1,5 +1,3 @@
-
-
 "use client"
 
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -22,6 +20,9 @@ import {
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
+import { auth, db } from "@/lib/firebase"
+import { signInWithEmailAndPassword } from "firebase/auth"
+import { doc, getDoc } from "firebase/firestore"
 
 const formSchema = z.object({
   email: z.string().email({
@@ -31,17 +32,6 @@ const formSchema = z.object({
     message: "Password is required.",
   }),
 })
-
-const getFromStorage = <T,>(key: string, fallback: T): T => {
-    if (typeof window === 'undefined') return fallback;
-    try {
-        const item = window.localStorage.getItem(key);
-        return item ? JSON.parse(item) : fallback;
-    } catch (error) {
-        console.error(`Error reading from localStorage key “${key}”:`, error);
-        return fallback;
-    }
-};
 
 export default function LoginPage() {
   const router = useRouter()
@@ -60,36 +50,29 @@ export default function LoginPage() {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true)
     try {
-      // Get all accounts from localStorage
-      const accounts = getFromStorage<any[]>('femigo-accounts', []);
-      
-      // Find the user by email
-      const userAccount = accounts.find(acc => acc.email === values.email);
+      // 1. Authenticate with real Firebase Auth
+      const userCredential = await signInWithEmailAndPassword(auth, values.email, values.password);
+      const user = userCredential.user;
 
-      if (!userAccount) {
+      // 2. Fetch the user's profile document from Firestore
+      const userDocRef = doc(db, "users", user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+
+      if (!userDocSnap.exists()) {
         toast({
           variant: "destructive",
           title: "Login Failed",
-          description: "Account not found. Please sign up to continue.",
-        });
-        setIsSubmitting(false);
-        return;
-      }
-      
-      // Check if the password matches
-      if (userAccount.password !== values.password) {
-        toast({
-          variant: "destructive",
-          title: "Login Failed",
-          description: "Invalid email or password. Please check your credentials and try again.",
+          description: "Account data not found. Please contact support.",
         });
         setIsSubmitting(false);
         return;
       }
 
-      // If credentials are correct
-      localStorage.setItem('femigo-user-profile', JSON.stringify(userAccount));
-      localStorage.setItem('userName', userAccount.displayName);
+      const userProfile = userDocSnap.data();
+
+      // 3. Cache profile locally for quick UI access (not the source of truth)
+      localStorage.setItem('femigo-user-profile', JSON.stringify(userProfile));
+      localStorage.setItem('userName', userProfile.displayName || 'User');
       localStorage.setItem('femigo-is-logged-in', 'true');
 
       toast({
@@ -100,10 +83,18 @@ export default function LoginPage() {
 
     } catch (error: any) {
       console.error("Login error:", error)
+
+      let description = "An unexpected error occurred. Please try again.";
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+        description = "Invalid email or password. Please check your credentials and try again.";
+      } else if (error.code === 'auth/too-many-requests') {
+        description = "Too many failed attempts. Please try again later.";
+      }
+
       toast({
         variant: "destructive",
         title: "Login Failed",
-        description: "An unexpected error occurred. Please try again.",
+        description,
       })
     } finally {
       setIsSubmitting(false)
@@ -121,7 +112,7 @@ export default function LoginPage() {
         className="absolute top-1/2 left-1/2 w-full h-full min-w-full min-h-full object-cover -translate-x-1/2 -translate-y-1/2 z-0 opacity-70"
       />
       <div className="absolute inset-0 z-10 bg-gradient-to-t from-[#06010F] via-[#06010F]/60 to-transparent" />
-      
+
       <div className="absolute top-8 left-8 z-20">
           <Link href="/" className="flex items-center gap-2 text-sm text-gray-300 transition-colors hover:text-white">
             <ArrowLeft className="h-4 w-4" />
