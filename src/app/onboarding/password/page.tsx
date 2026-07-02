@@ -1,5 +1,3 @@
-
-
 "use client"
 
 import { useState, useEffect } from "react"
@@ -14,6 +12,9 @@ import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/hooks/use-toast"
 import { PasswordStrength } from "@/components/ui/password-strength"
+import { auth, db } from "@/lib/firebase"
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth"
+import { doc, setDoc } from "firebase/firestore"
 
 const passwordSchema = z
   .object({
@@ -32,27 +33,6 @@ const passwordSchema = z
   })
 
 type PasswordFormValues = z.infer<typeof passwordSchema>
-
-const getFromStorage = <T,>(key: string, fallback: T): T => {
-    if (typeof window === 'undefined') return fallback;
-    try {
-        const item = window.localStorage.getItem(key);
-        return item ? JSON.parse(item) : fallback;
-    } catch (error) {
-        console.error(`Error reading from localStorage key “${key}”:`, error);
-        return fallback;
-    }
-};
-
-const saveToStorage = <T,>(key: string, value: T) => {
-    if (typeof window === 'undefined') return;
-    try {
-        window.localStorage.setItem(key, JSON.stringify(value));
-    } catch (error) {
-        console.error(`Error writing to localStorage key “${key}”:`, error);
-    }
-};
-
 
 export default function PasswordPage() {
   const router = useRouter()
@@ -93,15 +73,25 @@ export default function PasswordPage() {
         return;
     }
     setIsSubmitting(true)
-    
+
     try {
-      // 1. Gather all data from localStorage
+      // 1. Create the real Firebase Auth account.
+      // Firebase handles password hashing/storage securely — we never store the raw password ourselves.
+      const userCredential = await createUserWithEmailAndPassword(auth, userEmail, data.password);
+      const user = userCredential.user;
+
+      const displayName = localStorage.getItem("userName") || 'New User';
+      const photoURL = "https://i.ibb.co/W4PR2Pw2/Whats-App-Image-2025-07-09-at-11-21-29-ca10852e.jpg";
+
+      // 2. Update the Auth profile (optional but nice for displayName/photoURL access via auth.currentUser)
+      await updateProfile(user, { displayName, photoURL });
+
+      // 3. Build the Firestore profile document using the REAL Firebase UID
       const userProfileData: { [key: string]: any } = {
-        uid: `user-${Date.now()}`,
+        uid: user.uid,
         email: userEmail,
-        password: data.password, // In a real app, this should be hashed. For this project, storing plain text.
-        displayName: localStorage.getItem("userName") || 'New User',
-        photoURL: "https://i.ibb.co/W4PR2Pw2/Whats-App-Image-2025-07-09-at-11-21-29-ca10852e.jpg",
+        displayName,
+        photoURL,
         createdAt: new Date().toISOString(),
         trustedContacts: [],
       };
@@ -118,34 +108,44 @@ export default function PasswordPage() {
         { key: 'userNickname', dbKey: 'nickname' },
         { key: 'userAltPhone', dbKey: 'altPhone' },
       ];
-      
+
       fieldsToGet.forEach(field => {
         const value = localStorage.getItem(field.key);
         if (value) {
           userProfileData[field.dbKey] = field.dbKey === 'age' ? Number(value) : value;
         }
       });
-      
-      // 2. Get existing accounts and add the new one
-      const existingAccounts = getFromStorage('femigo-accounts', []);
-      const updatedAccounts = [...existingAccounts, userProfileData];
-      saveToStorage('femigo-accounts', updatedAccounts);
 
-      localStorage.setItem('userName', userProfileData.displayName);
+      // 4. Save the profile to Firestore under users/{uid} — matches your Firestore security rules pattern
+      await setDoc(doc(db, "users", user.uid), userProfileData);
 
-      // 3. Clean up temporary local storage items
+      // 5. Cache a bit of profile info locally for quick UI access (NOT the source of truth anymore)
+      localStorage.setItem('femigo-user-profile', JSON.stringify(userProfileData));
+      localStorage.setItem('userName', displayName);
+      localStorage.setItem('femigo-is-logged-in', 'true');
+
+      // 6. Clean up temporary onboarding data
       const lsKeysToClean = ['userEmail', 'userCountry', 'userPhone', 'userAge', 'userAddress1', 'userAddress2', 'userAddress3', 'userState', 'userCity', 'userNickname', 'userAltPhone', 'userPhotoDataUri', 'userAadhaarDataUri'];
       lsKeysToClean.forEach(key => localStorage.removeItem(key));
 
-      // Success! Redirect to congratulations page.
       router.push("/congratulations")
 
     } catch (error: any) {
       console.error("Account creation failed:", error)
+
+      let description = "An unexpected error occurred. Please try again.";
+      if (error.code === 'auth/email-already-in-use') {
+        description = "An account with this email already exists. Please log in instead.";
+      } else if (error.code === 'auth/weak-password') {
+        description = "Password is too weak. Please choose a stronger password.";
+      } else if (error.code === 'auth/invalid-email') {
+        description = "The email address is invalid.";
+      }
+
       toast({
         variant: "destructive",
         title: "Signup Failed",
-        description: "An unexpected error occurred. Please try again.",
+        description,
       })
     } finally {
       setIsSubmitting(false)
