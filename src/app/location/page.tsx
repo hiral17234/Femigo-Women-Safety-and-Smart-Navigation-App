@@ -1,7 +1,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
-import dynamic from 'next/dynamic';
+import nextDynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Car, Bike, TramFront, Footprints, ArrowRightLeft, Share2, MapPin, Circle, Loader2, Maximize, Users, MessageSquare, Mail, Copy, LocateFixed } from 'lucide-react';
@@ -20,10 +20,10 @@ import { AddressAutocomplete } from '@/components/location/address-autocomplete'
 import { geocodeAddress, reverseGeocode, getRoutes, formatDistance, formatDuration, type LatLng, type TravelMode, type RouteResult } from '@/lib/mapping';
 
 // Leaflet needs `window`, so map pieces are loaded client-side only.
-const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
-const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
-const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
+const MapContainer = nextDynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false });
+const TileLayer = nextDynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
+const Marker = nextDynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
+const Polyline = nextDynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
 
 type Place = { address: string; location: LatLng | null };
 type RouteDetail = RouteSafetyOutput & { isGenerated?: boolean };
