@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -608,7 +608,9 @@ function LocationPlanner() {
 export default function LocationPage() {
   return (
     <main className="h-screen w-full flex flex-col bg-background">
-      <LocationPlanner />
+      <Suspense fallback={<div className="flex items-center justify-center h-full">Loading...</div>}>
+        <LocationPlanner />
+      </Suspense>
     </main>
   );
 }
