@@ -1,64 +1,71 @@
-
 'use server';
-
 import { z } from 'zod';
 
-const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+const ORS_API_KEY = process.env.NEXT_PUBLIC_ORS_API_KEY;
 
 const PointSchema = z.object({
   lat: z.number(),
   lng: z.number(),
 });
-
 const SnapToRoadInputSchema = z.array(PointSchema);
-
 type Point = z.infer<typeof PointSchema>;
 
-// This function calls the Google Maps Roads API to snap a path of coordinates to the nearest roads.
+// Uses OpenRouteService's free Snapping API to snap a path of coordinates to the nearest roads.
 export async function snapToRoad(path: Point[]): Promise<Point[]> {
-  if (!GOOGLE_MAPS_API_KEY) {
-    console.error("Google Maps API Key is not configured.");
-    // Return original path if API key is missing to avoid breaking the app.
+  if (!ORS_API_KEY) {
+    console.error("OpenRouteService API Key is not configured.");
     return path;
   }
-  
-  // The Roads API has a limit of 100 points per request.
-  if (path.length === 0 || path.length > 100) {
-    console.warn(`Path must contain 1-100 points. Received ${path.length}.`);
-    // Return the last valid point to keep the line going, or an empty array.
-    return path.length > 0 ? [path[path.length - 1]] : [];
+
+  if (path.length === 0) {
+    return [];
   }
 
+  // ORS snapping works on individual locations (not a full polyline like Google's Roads API),
+  // so we snap each point independently against the road network.
   const validatedPath = SnapToRoadInputSchema.safeParse(path);
-
   if (!validatedPath.success) {
-      console.error("Invalid path format for snapToRoad:", validatedPath.error);
-      return [];
+    console.error("Invalid path format for snapToRoad:", validatedPath.error);
+    return path;
   }
 
-  const pathString = validatedPath.data.map(p => `${p.lat},${p.lng}`).join('|');
-  const url = `https://roads.googleapis.com/v1/snapToRoads?path=${pathString}&interpolate=true&key=${GOOGLE_MAPS_API_KEY}`;
+  const locations = validatedPath.data.map(p => [p.lng, p.lat]);
 
   try {
-    const response = await fetch(url);
+    const response = await fetch('https://api.openrouteservice.org/v2/snap/driving-car', {
+      method: 'POST',
+      headers: {
+        Authorization: ORS_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        locations,
+        radius: 350, // search radius in meters to find a nearby road
+      }),
+    });
+
     if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Google Roads API HTTP Error:', response.status, errorData);
-        return path; // Return original path on API error
+      const errorData = await response.text();
+      console.error('OpenRouteService Snapping API Error:', response.status, errorData);
+      return path; // Return original points on API error, so tracking still works
     }
 
     const data = await response.json();
 
-    if (data.snappedPoints) {
-      return data.snappedPoints.map((point: any) => ({
-        lat: point.location.latitude,
-        lng: point.location.longitude,
-      }));
+    if (data.locations) {
+      return data.locations.map((loc: any, i: number) => {
+        // ORS returns null for a location it couldn't snap (e.g. no road within radius) — fall back to the original point
+        if (!loc || !loc.location) return path[i];
+        return {
+          lat: loc.location[1],
+          lng: loc.location[0],
+        };
+      });
     }
-    
-    return [];
+
+    return path;
   } catch (error) {
-    console.error('Failed to fetch from Roads API:', error);
+    console.error('Failed to fetch from OpenRouteService Snapping API:', error);
     return path; // Return original path on network error
   }
 }
