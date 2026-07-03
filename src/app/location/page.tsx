@@ -1,527 +1,327 @@
-
 'use client';
 
-import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Car, Bike, TramFront, Footprints, ArrowRightLeft, Share2, MapPin, Circle, Loader2, Maximize, Users, MessageSquare, Mail, Copy, LocateFixed } from 'lucide-react';
-import { APIProvider, Map, AdvancedMarker, useMapsLibrary, useMap } from '@vis.gl/react-google-maps';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { snapToRoad } from '@/app/actions/snap-to-road';
 import { getRouteSafetyDetails } from '@/ai/flows/route-safety-flow';
 import { recommendSafestRoute } from '@/ai/flows/recommend-safest-route-flow';
 import { Badge } from '@/components/ui/badge';
-import { geocodeAddress } from '../actions/geocode-address';
 import { type RouteSafetyOutput } from '@/ai/types';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { reverseGeocode } from '../actions/reverse-geocode';
+import { AddressAutocomplete } from '@/components/location/address-autocomplete';
+import { geocodeAddress, reverseGeocode, getRoutes, formatDistance, formatDuration, type LatLng, type TravelMode, type RouteResult } from '@/lib/mapping';
 
+// Leaflet needs `window`, so map pieces are loaded client-side only.
+const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
+const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
+const Polyline = dynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
 
-const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-
-type Point = { lat: number; lng: number };
-type Place = { address: string; location: Point | null };
-type TravelMode = 'DRIVING' | 'BICYCLING' | 'TRANSIT' | 'WALKING';
+type Place = { address: string; location: LatLng | null };
 type RouteDetail = RouteSafetyOutput & { isGenerated?: boolean };
 type TrustedContact = { id: string; name: string; phone: string; };
+type FullRoute = RouteResult & { details?: RouteDetail };
 
-
-// Helper function to parse DMS coordinates
-function parseDMSToLatLng(dmsStr: string): Point | null {
+// Helper to parse DMS coordinates like `12°34'56.7"N 77°12'34.5"E`
+function parseDMSToLatLng(dmsStr: string): LatLng | null {
   const regex = /(\d{1,3}(?:\.\d+)?)°\s*(\d{1,2}(?:\.\d+)?)'\s*([\d.]+)"\s*([NS])[\s,]+(\d{1,3}(?:\.\d+)?)°\s*(\d{1,2}(?:\.\d+)?)'\s*([\d.]+)"\s*([EW])/i;
   const match = dmsStr.match(regex);
-
   if (!match) return null;
-
   try {
     const latDegrees = parseFloat(match[1]);
     const latMinutes = parseFloat(match[2]);
     const latSeconds = parseFloat(match[3]);
     const latDirection = match[4].toUpperCase();
-
     const lonDegrees = parseFloat(match[5]);
     const lonMinutes = parseFloat(match[6]);
     const lonSeconds = parseFloat(match[7]);
     const lonDirection = match[8].toUpperCase();
-    
     if (latDegrees > 90 || lonDegrees > 180 || latMinutes >= 60 || lonMinutes >= 60 || latSeconds >= 60 || lonSeconds >= 60) return null;
-
     let lat = latDegrees + (latMinutes / 60) + (latSeconds / 3600);
     if (latDirection === 'S') lat = -lat;
-
     let lng = lonDegrees + (lonMinutes / 60) + (lonSeconds / 3600);
     if (lonDirection === 'W') lng = -lng;
-
     if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
-
     return { lat, lng };
-  } catch (e) {
+  } catch {
     return null;
   }
 }
 
-// A custom marker component that pulses
-const UserMarker = () => (
-    <div className="relative flex h-5 w-5 items-center justify-center">
-      <div className="absolute h-full w-full animate-ping rounded-full bg-blue-500/70" />
-      <div className="relative h-3 w-3 rounded-full border-2 border-white bg-blue-500" />
-    </div>
-);
-
-const StartPointMarker = () => (
-    <div className="text-green-500">
-        <MapPin className="h-8 w-8 drop-shadow-lg" fill="currentColor" stroke="white" strokeWidth={1.5} />
-    </div>
-);
-
-const DestinationPointMarker = () => (
-    <div className="text-red-500">
-        <MapPin className="h-8 w-8 drop-shadow-lg" fill="currentColor" stroke="white" strokeWidth={1.5} />
-    </div>
-);
-
-/**
- * Renders the route polylines on the map.
- * @param routes - The array of routes from the Directions Service.
- * @param selectedRouteIndex - The index of the currently selected route.
- * @param onRouteClick - Handler for when a route is clicked.
- */
-const RoutePolylines = ({ routes, selectedRouteIndex, onRouteClick }: { routes: google.maps.DirectionsRoute[], selectedRouteIndex: number, onRouteClick: (index: number) => void }) => {
-    const map = useMap();
-    const polylinesRef = useRef<google.maps.Polyline[]>([]);
-
-    useEffect(() => {
-        if (!map || !window.google?.maps?.Polyline) return;
-
-        // Clear previous polylines
-        polylinesRef.current.forEach(polyline => polyline.setMap(null));
-        polylinesRef.current = [];
-
-        if (!routes) return;
-        
-        routes.forEach((route, index) => {
-            const isSelected = index === selectedRouteIndex;
-            // Dashed line symbol for alternate routes
-            const lineSymbol = {
-                path: 'M 0,-1 0,1',
-                strokeOpacity: 1,
-                scale: 4,
-            };
-
-            const polyline = new window.google.maps.Polyline({
-                path: route.overview_path,
-                geodesic: true,
-                strokeColor: isSelected ? 'hsl(var(--primary))' : '#808080',
-                strokeOpacity: isSelected ? 0.9 : 0.7,
-                strokeWeight: isSelected ? 8 : 6,
-                zIndex: isSelected ? 2 : 1,
-                icons: isSelected ? undefined : [{
-                    icon: lineSymbol,
-                    offset: '0',
-                    repeat: '20px'
-                }],
-                map: map,
-            });
-
-            polyline.addListener('click', () => {
-                onRouteClick(index);
-            });
-
-            polylinesRef.current.push(polyline);
-        });
-
-        // Cleanup function to remove polylines from map when component unmounts or dependencies change
-        return () => {
-            polylinesRef.current.forEach(polyline => polyline.setMap(null));
-        }
-
-    }, [map, routes, selectedRouteIndex, onRouteClick]);
-
-    return null;
-}
-
-/**
- * Renders the user's live tracked path on the map.
- * @param path - An array of points representing the user's path.
- */
-const LiveTrackingPolyline = ({ path }: { path: Point[] }) => {
-    const map = useMap();
-    const polylineRef = useRef<google.maps.Polyline | null>(null);
-
-    useEffect(() => {
-        if (!map || !window.google?.maps?.Polyline) return;
-
-        if (!polylineRef.current) {
-            polylineRef.current = new window.google.maps.Polyline({
-                path: path,
-                strokeColor: '#0000FF', // Blue
-                strokeOpacity: 0.9,
-                strokeWeight: 8,
-                zIndex: 3, // Ensure it's on top of other route lines
-                map: map,
-            });
-        } else {
-             polylineRef.current.setPath(path);
-        }
-    }, [map, path]);
-    
-    // Cleanup on unmount
-    useEffect(() => {
-        const polyline = polylineRef.current;
-        return () => {
-            if (polyline) {
-                polyline.setMap(null);
-            }
-        };
-    }, []);
-
-    return null;
+// Divicon-based markers (Leaflet's default marker images don't bundle well with Next.js)
+function useDivIcon(html: string, size: [number, number] = [32, 32]) {
+  const [icon, setIcon] = useState<any>(null);
+  useEffect(() => {
+    import('leaflet').then((L) => {
+      setIcon(
+        L.divIcon({
+          html,
+          className: 'bg-transparent border-0',
+          iconSize: size,
+          iconAnchor: [size[0] / 2, size[1]],
+        })
+      );
+    });
+  }, [html]);
+  return icon;
 }
 
 function LocationPlanner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const [userLocation, setUserLocation] = useState<Point | null>(null);
-  const [mapCenter, setMapCenter] = useState<Point>({ lat: 20.5937, lng: 78.9629 });
+
+  const [userLocation, setUserLocation] = useState<LatLng | null>(null);
+  const [mapCenter, setMapCenter] = useState<LatLng>({ lat: 20.5937, lng: 78.9629 });
   const [mapZoom, setMapZoom] = useState(4);
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [travelMode, setTravelMode] = useState<TravelMode>('WALKING');
 
-  // We need to keep the raw text input separate from the validated location object
   const [startInputText, setStartInputText] = useState('');
   const [destInputText, setDestInputText] = useState('');
-
   const [startPoint, setStartPoint] = useState<Place>({ address: "", location: null });
   const [destinationPoint, setDestinationPoint] = useState<Place>({ address: "", location: null });
-  
-  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
+
+  const [routes, setRoutes] = useState<FullRoute[]>([]);
   const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
   const [isCalculating, setIsCalculating] = useState(false);
-  const [routeDetails, setRouteDetails] = useState<RouteDetail[]>([]);
   const [recommendation, setRecommendation] = useState<{ index: number; reason: string } | null>(null);
 
   const [isTracking, setIsTracking] = useState(false);
-  const [livePath, setLivePath] = useState<Point[]>([]);
-  const rawPathRef = useRef<Point[]>([]);
+  const [livePath, setLivePath] = useState<LatLng[]>([]);
+  const rawPathRef = useRef<LatLng[]>([]);
   const watchIdRef = useRef<number | null>(null);
   const isRecalculatingRef = useRef(false);
 
-  const startInputRef = useRef<HTMLInputElement>(null);
-  const destinationInputRef = useRef<HTMLInputElement>(null);
-  
   const [isShareOpen, setIsShareOpen] = useState(false);
 
-  const placesLibrary = useMapsLibrary('places');
-  const routesLibrary = useMapsLibrary('routes');
-  const geometryLibrary = useMapsLibrary('geometry');
+  const userIcon = useDivIcon(
+    `<div style="position:relative;width:20px;height:20px;"><div style="position:absolute;inset:0;border-radius:50%;background:rgba(59,130,246,0.7);animation:pulse 1.5s infinite;"></div><div style="position:absolute;inset:5px;border-radius:50%;background:#3b82f6;border:2px solid white;"></div></div>`,
+    [20, 20]
+  );
+  const startIcon = useDivIcon(
+    `<svg width="32" height="32" viewBox="0 0 24 24" fill="#22c55e" stroke="white" stroke-width="1.5"><path d="M12 21s-8-7.5-8-13a8 8 0 1 1 16 0c0 5.5-8 13-8 13z"/><circle cx="12" cy="8" r="3" fill="white"/></svg>`
+  );
+  const destIcon = useDivIcon(
+    `<svg width="32" height="32" viewBox="0 0 24 24" fill="#ef4444" stroke="white" stroke-width="1.5"><path d="M12 21s-8-7.5-8-13a8 8 0 1 1 16 0c0 5.5-8 13-8 13z"/><circle cx="12" cy="8" r="3" fill="white"/></svg>`
+  );
 
-  const handleSetCurrentLocation = useCallback(async (location: Point) => {
+  const handleSetCurrentLocation = useCallback(async (location: LatLng) => {
     setUserLocation(location);
     setIsFetchingLocation(true);
     try {
-        const address = await reverseGeocode(location);
-        setStartPoint({ address: address, location: location });
-        setStartInputText(address);
+      const address = await reverseGeocode(location);
+      setStartPoint({ address, location });
+      setStartInputText(address);
     } catch {
-        setStartPoint({ address: "Your Location", location: location });
-        setStartInputText("Your Location");
+      setStartPoint({ address: "Your Location", location });
+      setStartInputText("Your Location");
     } finally {
-        setIsFetchingLocation(false);
-        setMapCenter(location);
-        setMapZoom(15);
+      setIsFetchingLocation(false);
+      setMapCenter(location);
+      setMapZoom(15);
     }
-}, []);
+  }, []);
 
-const fetchCurrentLocation = useCallback(() => {
+  const fetchCurrentLocation = useCallback(() => {
     if (!navigator.geolocation) {
-        toast({ variant: 'destructive', title: 'Geolocation is not supported.' });
-        return;
+      toast({ variant: 'destructive', title: 'Geolocation is not supported.' });
+      return;
     }
     setIsFetchingLocation(true);
     toast({ title: 'Fetching your location...' });
-
     navigator.geolocation.getCurrentPosition(
-        (position) => {
-            const newLocation: Point = { lat: position.coords.latitude, lng: position.coords.longitude };
-            handleSetCurrentLocation(newLocation);
-            toast.dismiss();
-        },
-        () => {
-            toast({ variant: 'destructive', title: 'Could not get your location.', description: "Please enable location services and try again." });
-            setIsFetchingLocation(false);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      (position) => {
+        handleSetCurrentLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+        toast.dismiss();
+      },
+      () => {
+        toast({ variant: 'destructive', title: 'Could not get your location.', description: "Please enable location services and try again." });
+        setIsFetchingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
-}, [handleSetCurrentLocation, toast]);
+  }, [handleSetCurrentLocation, toast]);
 
-  // Effect to get user's location once, and handle incoming route data from query params
   useEffect(() => {
     const destName = searchParams.get('destinationName');
     const destLat = searchParams.get('destinationLat');
     const destLng = searchParams.get('destinationLng');
     const destAddress = searchParams.get('destinationAddress');
-    
     if (destName && destLat && destLng && destAddress) {
-        setDestInputText(destAddress);
-        setDestinationPoint({
-            address: destAddress,
-            location: { lat: parseFloat(destLat), lng: parseFloat(destLng) }
-        });
+      setDestInputText(destAddress);
+      setDestinationPoint({ address: destAddress, location: { lat: parseFloat(destLat), lng: parseFloat(destLng) } });
     }
-
-    // Try to get location automatically once on load
     fetchCurrentLocation();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  
-  // Effect to handle coordinate input for start point
+
+  // DMS coordinate detection
   useEffect(() => {
     const dmsCoords = parseDMSToLatLng(startInputText);
     if (dmsCoords) {
-        setStartPoint({ address: startInputText, location: dmsCoords });
-        if (directions) {
-            setDirections(null);
-            setRouteDetails([]);
-            setRecommendation(null);
-        }
+      setStartPoint({ address: startInputText, location: dmsCoords });
     } else if (startInputText.trim() === '') {
-        setStartPoint({ address: '', location: null });
+      setStartPoint({ address: '', location: null });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startInputText]);
 
-  // Effect to handle coordinate input for destination point
   useEffect(() => {
     const dmsCoords = parseDMSToLatLng(destInputText);
     if (dmsCoords) {
-        setDestinationPoint({ address: destInputText, location: dmsCoords });
-        if (directions) {
-            setDirections(null);
-            setRouteDetails([]);
-            setRecommendation(null);
-        }
+      setDestinationPoint({ address: destInputText, location: dmsCoords });
     } else if (destInputText.trim() === '') {
-        setDestinationPoint({ address: '', location: null });
+      setDestinationPoint({ address: '', location: null });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [destInputText]);
 
-
-  // Effect to initialize Google Places Autocomplete.
+  // Re-center map when points change but no route yet
   useEffect(() => {
-    if (!placesLibrary || !startInputRef.current || !destinationInputRef.current) return;
-
-    const startAutocomplete = new placesLibrary.Autocomplete(startInputRef.current, { fields: ['geometry.location', 'formatted_address', 'name'] });
-    const destinationAutocomplete = new placesLibrary.Autocomplete(destinationInputRef.current, { fields: ['geometry.location', 'formatted_address', 'name'] });
-
-    const startListener = startAutocomplete.addListener('place_changed', () => {
-      const place = startAutocomplete.getPlace();
-      if (place.geometry?.location) {
-          const newLocation = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
-          const newAddress = place.formatted_address || place.name || '';
-          setStartPoint({ address: newAddress, location: newLocation });
-          setStartInputText(newAddress);
-      }
-    });
-    
-    const destListener = destinationAutocomplete.addListener('place_changed', () => {
-      const place = destinationAutocomplete.getPlace();
-      if (place.geometry?.location) {
-          const newLocation = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
-          const newAddress = place.formatted_address || place.name || '';
-          setDestinationPoint({ address: newAddress, location: newLocation });
-          setDestInputText(newAddress);
-      }
-    });
-
-    return () => {
-        startListener.remove();
-        destListener.remove();
+    if (routes.length > 0) return;
+    let pointToCenter: LatLng | null = null;
+    if (startPoint.location && destinationPoint.location) {
+      pointToCenter = {
+        lat: (startPoint.location.lat + destinationPoint.location.lat) / 2,
+        lng: (startPoint.location.lng + destinationPoint.location.lng) / 2,
+      };
+      setMapZoom(12);
+    } else if (startPoint.location) {
+      pointToCenter = startPoint.location;
+      setMapZoom(15);
+    } else if (destinationPoint.location) {
+      pointToCenter = destinationPoint.location;
+      setMapZoom(15);
     }
-  }, [placesLibrary]);
+    if (pointToCenter) setMapCenter(pointToCenter);
+  }, [startPoint.location, destinationPoint.location, routes.length]);
 
-  // Effect to re-center the map when a single point is entered or both are entered but no route yet.
+  // Fetch routes when parameters change
   useEffect(() => {
-      if (directions) return; // Don't re-center if we have a route.
-      
-      let pointToCenter: Point | null = null;
-      let zoomLevel = 15;
-
-      if (startPoint.location && destinationPoint.location) {
-          if (window.google?.maps?.LatLngBounds) {
-            const bounds = new window.google.maps.LatLngBounds();
-            bounds.extend(startPoint.location);
-            bounds.extend(destinationPoint.location);
-            const tempMapEl = document.createElement('div');
-            tempMapEl.style.width = '100px'; tempMapEl.style.height = '100px';
-            const newMap = new window.google.maps.Map(tempMapEl);
-            newMap.fitBounds(bounds);
-            zoomLevel = newMap.getZoom() ?? 12;
-            pointToCenter = bounds.getCenter().toJSON();
-          }
-      } else if (startPoint.location) {
-          pointToCenter = startPoint.location;
-      } else if (destinationPoint.location) {
-          pointToCenter = destinationPoint.location;
-      }
-
-      if (pointToCenter) {
-          setMapCenter(pointToCenter);
-          setMapZoom(zoomLevel);
-      }
-  }, [startPoint.location, destinationPoint.location, directions]);
-
-
-  // Effect to fetch directions when route parameters change.
-  useEffect(() => {
-    if (!routesLibrary || !startPoint.location || !destinationPoint.location) {
-      if (directions) {
-          setDirections(null);
-          setRouteDetails([]);
-          setRecommendation(null);
+    if (!startPoint.location || !destinationPoint.location) {
+      if (routes.length > 0) {
+        setRoutes([]);
+        setRecommendation(null);
       }
       return;
     }
-    const directionsService = new routesLibrary.DirectionsService();
+
+    let cancelled = false;
     setIsCalculating(true);
-    setDirections(null);
-    setRouteDetails([]);
+    setRoutes([]);
     setRecommendation(null);
-    
-    directionsService.route({
-        origin: startPoint.location,
-        destination: destinationPoint.location,
-        travelMode: travelMode as google.maps.TravelMode,
-        provideRouteAlternatives: true,
-    }).then(async response => {
-        setDirections(response);
 
-        if(response.routes.length > 0) {
-            if (response.routes[0].bounds && window.google?.maps) {
-                const bounds = response.routes[0].bounds;
-                const tempMapEl = document.createElement('div');
-                tempMapEl.style.width = '100px'; tempMapEl.style.height = '100px';
-                const newMap = new window.google.maps.Map(tempMapEl);
-                newMap.fitBounds(bounds);
-                setMapZoom(newMap.getZoom() ?? 12);
-                setMapCenter(bounds.getCenter().toJSON());
-            }
+    (async () => {
+      try {
+        const results = await getRoutes(travelMode, startPoint.location!, destinationPoint.location!);
+        if (cancelled) return;
 
-            // Generate safety details for all routes
-            try {
-                const detailsPromises = response.routes.map(route => getRouteSafetyDetails({
-                    summary: route.summary,
-                    distance: route.legs[0].distance?.text || 'N/A',
-                    duration: route.legs[0].duration?.text || 'N/A',
-                }));
-                const allDetails = await Promise.all(detailsPromises);
-                const generatedDetails = allDetails.map(d => ({ ...d, isGenerated: true }));
-                setRouteDetails(generatedDetails);
-
-                // Now get the recommendation
-                if (generatedDetails.length > 0) {
-                    const rec = await recommendSafestRoute(generatedDetails);
-                    setRecommendation({ index: rec.recommendedRouteIndex, reason: rec.reason });
-                    setSelectedRouteIndex(rec.recommendedRouteIndex);
-                }
-            } catch (e) {
-                console.error("AI safety details or recommendation failed:", e);
-                // Fallback to basic info if AI fails
-                const fallbackDetails = response.routes.map(() => ({
-                    roadQuality: 'Moderate', incidents: 'N/A', reviewsCount: 0, lighting: 'Partially-lit', crowdedness: 'Medium',
-                    safetySummary: 'Could not load AI safety details.', crimeSummary: '', policeInfo: '', weatherInfo: '', isGenerated: false,
-                }));
-                setRouteDetails(fallbackDetails);
-            }
+        if (results.length === 0) {
+          toast({ variant: 'destructive', title: 'Could not calculate routes.' });
+          setIsCalculating(false);
+          return;
         }
-        setIsCalculating(false);
-        setTimeout(() => { isRecalculatingRef.current = false; }, 2000);
 
-    }).catch(e => {
-        console.error("Directions request failed", e);
-        toast({ variant: 'destructive', title: 'Could not calculate routes.' });
-        setIsCalculating(false);
-        setTimeout(() => { isRecalculatingRef.current = false; }, 2000);
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routesLibrary, startPoint.location, destinationPoint.location, travelMode]);
-  
-  // Effect to manage live location tracking
+        // Center map on the route
+        const allPoints = results[0].path;
+        if (allPoints.length > 0) {
+          const lats = allPoints.map(p => p.lat);
+          const lngs = allPoints.map(p => p.lng);
+          setMapCenter({
+            lat: (Math.min(...lats) + Math.max(...lats)) / 2,
+            lng: (Math.min(...lngs) + Math.max(...lngs)) / 2,
+          });
+          setMapZoom(13);
+        }
+
+        // Get AI safety details for each route
+        try {
+          const detailsPromises = results.map(r => getRouteSafetyDetails({
+            summary: r.summary,
+            distance: formatDistance(r.distanceMeters),
+            duration: formatDuration(r.durationSeconds),
+          }));
+          const allDetails = await Promise.all(detailsPromises);
+          if (cancelled) return;
+
+          const fullRoutes: FullRoute[] = results.map((r, i) => ({ ...r, details: { ...allDetails[i], isGenerated: true } }));
+          setRoutes(fullRoutes);
+
+          const rec = await recommendSafestRoute(allDetails);
+          if (!cancelled) {
+            setRecommendation({ index: rec.recommendedRouteIndex, reason: rec.reason });
+            setSelectedRouteIndex(rec.recommendedRouteIndex);
+          }
+        } catch (e) {
+          console.error("AI safety details failed:", e);
+          setRoutes(results.map(r => ({ ...r })));
+        }
+      } catch (e) {
+        console.error("Routing failed", e);
+        if (!cancelled) toast({ variant: 'destructive', title: 'Could not calculate routes.' });
+      } finally {
+        if (!cancelled) setIsCalculating(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startPoint.location, destinationPoint.location, travelMode]);
+
+  // Live tracking
   useEffect(() => {
     if (!isTracking) {
-        if (watchIdRef.current) {
-            navigator.geolocation.clearWatch(watchIdRef.current);
-            watchIdRef.current = null;
-        }
-        return;
+      if (watchIdRef.current) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      return;
     }
 
     const processPath = async () => {
-        if (rawPathRef.current.length === 0) return;
-        
-        const path_to_snap = [...(livePath.slice(-1)), ...rawPathRef.current];
-        rawPathRef.current = [];
-        
-        try {
-            const newSnappedPoints = await snapToRoad(path_to_snap);
-            if (newSnappedPoints && newSnappedPoints.length > 0) {
-                 setLivePath(prev => {
-                    const prevPath = prev.length > 0 ? prev.slice(0, -1) : [];
-                    return [...prevPath, ...newSnappedPoints];
-                });
-            }
-        } catch (e) { console.error("Failed to snap to road:", e); }
+      if (rawPathRef.current.length === 0) return;
+      const path_to_snap = [...(livePath.slice(-1)), ...rawPathRef.current];
+      rawPathRef.current = [];
+      try {
+        const newSnappedPoints = await snapToRoad(path_to_snap);
+        if (newSnappedPoints && newSnappedPoints.length > 0) {
+          setLivePath(prev => {
+            const prevPath = prev.length > 0 ? prev.slice(0, -1) : [];
+            return [...prevPath, ...newSnappedPoints];
+          });
+        }
+      } catch (e) {
+        console.error("Failed to snap to road:", e);
+      }
     };
 
     const snapInterval = setInterval(processPath, 5000);
 
     watchIdRef.current = navigator.geolocation.watchPosition(
-        (position) => {
-            const newLocation: Point = { lat: position.coords.latitude, lng: position.coords.longitude };
-            setUserLocation(newLocation);
-            rawPathRef.current.push(newLocation);
-
-            // Off-route check
-            if (geometryLibrary && directions && directions.routes.length > selectedRouteIndex && window.google?.maps?.geometry && !isRecalculatingRef.current) {
-                const routePath = new window.google.maps.Polyline({
-                    path: directions.routes[selectedRouteIndex].overview_path,
-                });
-                
-                const onRoute = window.google.maps.geometry.poly.isLocationOnEdge(
-                    new window.google.maps.LatLng(newLocation.lat, newLocation.lng),
-                    routePath,
-                    0.001 // ~111 meters tolerance
-                );
-
-                if (!onRoute) {
-                    isRecalculatingRef.current = true;
-                    toast({ variant: "destructive", title: "You are off-route!", description: "Recalculating..." });
-                    setStartPoint({ address: "Your Location", location: newLocation });
-                    setStartInputText("Your Location");
-                }
-            }
-        },
-        () => {
-            toast({ variant: "destructive", title: "Could not get your location." });
-            setIsTracking(false);
-        },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      (position) => {
+        const newLocation: LatLng = { lat: position.coords.latitude, lng: position.coords.longitude };
+        setUserLocation(newLocation);
+        rawPathRef.current.push(newLocation);
+      },
+      () => {
+        toast({ variant: "destructive", title: "Could not get your location." });
+        setIsTracking(false);
+      },
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
     );
-    
-    return () => {
-        clearInterval(snapInterval);
-        if (watchIdRef.current) {
-            navigator.geolocation.clearWatch(watchIdRef.current);
-        }
-    };
-  }, [isTracking, directions, selectedRouteIndex, geometryLibrary, toast, livePath]);
 
+    return () => {
+      clearInterval(snapInterval);
+      if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
+    };
+  }, [isTracking, toast, livePath]);
 
   const handleSwapLocations = () => {
     setStartPoint(destinationPoint);
@@ -529,51 +329,25 @@ const fetchCurrentLocation = useCallback(() => {
     setStartInputText(destInputText);
     setDestInputText(startInputText);
   };
-  
+
   const handleStartTracking = () => {
-      if (isTracking) {
-        setIsTracking(false);
-      } else {
-         if (!directions?.routes[selectedRouteIndex]) {
-            toast({ variant: 'destructive', title: 'No route selected to start tracking.' });
-            return;
-        }
-        setLivePath(userLocation ? [userLocation] : []);
-        rawPathRef.current = [];
-        setIsTracking(true);
+    if (isTracking) {
+      setIsTracking(false);
+    } else {
+      if (routes.length === 0) {
+        toast({ variant: 'destructive', title: 'No route selected to start tracking.' });
+        return;
       }
-  }
-
-  const handleViewDetails = async (route: google.maps.DirectionsRoute, index: number) => {
-    const currentDetails = routeDetails[index];
-
-    // If details are already generated, navigate directly
-    if (currentDetails.isGenerated) {
-      sessionStorage.setItem("selectedRouteData", JSON.stringify({ route, details: currentDetails }));
-      router.push("/location/route-details");
-      return;
+      setLivePath(userLocation ? [userLocation] : []);
+      rawPathRef.current = [];
+      setIsTracking(true);
     }
+  };
 
-    toast({ title: 'Generating AI Safety Insights...', description: 'This may take a moment.' });
-    
-    try {
-      const details = await getRouteSafetyDetails({
-        summary: route.summary,
-        distance: route.legs[0].distance?.text || 'N/A',
-        duration: route.legs[0].duration?.text || 'N/A',
-      });
-      
-      const newRouteDetails = [...routeDetails];
-      newRouteDetails[index] = { ...details, isGenerated: true };
-      setRouteDetails(newRouteDetails);
-
-      sessionStorage.setItem("selectedRouteData", JSON.stringify({ route, details }));
-      router.push("/location/route-details");
-
-    } catch(e) {
-      console.error("Safety detail generation failed:", e);
-      toast({ variant: 'destructive', title: 'Error', description: 'Could not generate safety details for this route.' });
-    }
+  const handleViewDetails = (route: FullRoute) => {
+    if (!route.details) return;
+    sessionStorage.setItem("selectedRouteData", JSON.stringify({ route, details: route.details }));
+    router.push("/location/route-details");
   };
 
   const handleGeocodeInput = async (which: 'start' | 'destination') => {
@@ -581,71 +355,55 @@ const fetchCurrentLocation = useCallback(() => {
     const point = which === 'start' ? startPoint : destinationPoint;
     const setPoint = which === 'start' ? setStartPoint : setDestinationPoint;
 
-    // Don't geocode if we already have a location for this exact text,
-    // or if it's "Your Location", or if it's a valid coordinate string, or empty.
     if ((point.location && point.address === text) || text === 'Your Location' || parseDMSToLatLng(text) || text.trim() === '') {
-        return;
+      return;
     }
-    
-    try {
-        const location = await geocodeAddress(text);
-        if (location) {
-            setPoint({ address: text, location });
-        } else {
-            toast({
-                variant: 'destructive',
-                title: 'Location not found',
-                description: `Could not find a location for "${text}".`,
-            });
-        }
-    } catch (error) {
-         toast({
-            variant: 'destructive',
-            title: 'Geocoding Error',
-            description: 'Could not look up the address.',
-        });
+
+    const result = await geocodeAddress(text);
+    if (result) {
+      setPoint(result);
+    } else {
+      toast({ variant: 'destructive', title: 'Location not found', description: `Could not find a location for "${text}".` });
     }
   };
 
   const handleShare = (type: 'contacts' | 'whatsapp' | 'email' | 'copy') => {
     if (!userLocation) {
-        toast({ variant: 'destructive', title: "Location unavailable", description: "Cannot share without your current location." });
-        return;
+      toast({ variant: 'destructive', title: "Location unavailable", description: "Cannot share without your current location." });
+      return;
     }
     const shareUrl = `${window.location.origin}/location/fullscreen`;
     const shareText = `I'm sharing my live location with you via Femigo. You can see me here: ${shareUrl}`;
 
     if (type === 'copy') {
-        navigator.clipboard.writeText(shareUrl);
-        toast({ title: "Link Copied!", description: "The live location link is now on your clipboard." });
+      navigator.clipboard.writeText(shareUrl);
+      toast({ title: "Link Copied!", description: "The live location link is now on your clipboard." });
     } else if (type === 'whatsapp') {
-        window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank');
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank');
     } else if (type === 'email') {
-        window.location.href = `mailto:?subject=My Live Location&body=${encodeURIComponent(shareText)}`;
+      window.location.href = `mailto:?subject=My Live Location&body=${encodeURIComponent(shareText)}`;
     } else if (type === 'contacts') {
-        const profile = JSON.parse(localStorage.getItem('femigo-user-profile') || '{}');
-        const contacts: TrustedContact[] = profile.trustedContacts || [];
-        if (contacts.length === 0) {
-            toast({ variant: 'destructive', title: "No trusted contacts", description: "Please add trusted contacts in the Emergency section first." });
-            return;
-        }
-        const phoneNumbers = contacts.map(c => c.phone).join(',');
-        window.location.href = `sms:${phoneNumbers}?body=${encodeURIComponent(shareText)}`;
+      const profile = JSON.parse(localStorage.getItem('femigo-user-profile') || '{}');
+      const contacts: TrustedContact[] = profile.trustedContacts || [];
+      if (contacts.length === 0) {
+        toast({ variant: 'destructive', title: "No trusted contacts", description: "Please add trusted contacts in the Emergency section first." });
+        return;
+      }
+      const phoneNumbers = contacts.map(c => c.phone).join(',');
+      window.location.href = `sms:${phoneNumbers}?body=${encodeURIComponent(shareText)}`;
     }
     setIsShareOpen(false);
   };
 
-
   const travelModes = [
-      { name: 'DRIVING', icon: Car },
-      { name: 'BICYCLING', icon: Bike },
-      { name: 'TRANSIT', icon: TramFront },
-      { name: 'WALKING', icon: Footprints },
-  ]
+    { name: 'DRIVING' as TravelMode, icon: Car },
+    { name: 'BICYCLING' as TravelMode, icon: Bike },
+    { name: 'TRANSIT' as TravelMode, icon: TramFront },
+    { name: 'WALKING' as TravelMode, icon: Footprints },
+  ];
 
-  const onRouteClick = (index: number) => {
-    setSelectedRouteIndex(index);
-  }
+  const fastestIndex = routes.length > 0 ? routes.reduce((best, r, i) => r.durationSeconds < routes[best].durationSeconds ? i : best, 0) : -1;
+  const shortestIndex = routes.length > 0 ? routes.reduce((best, r, i) => r.distanceMeters < routes[best].distanceMeters ? i : best, 0) : -1;
 
   return (
     <div className="w-full max-w-md mx-auto flex flex-col flex-1 bg-background">
@@ -654,209 +412,203 @@ const fetchCurrentLocation = useCallback(() => {
           <div className='flex items-center gap-4'>
             <Link href="/dashboard">
               <Button variant="ghost" size="icon" className="text-foreground hover:bg-accent rounded-full">
-                  <ArrowLeft className="h-5 w-5" />
+                <ArrowLeft className="h-5 w-5" />
               </Button>
             </Link>
             <div className="flex items-center gap-1 text-2xl font-bold text-foreground">
-                Femigo
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-primary">
-                    <path d="M12 21.35L10.55 20.03C5.4 15.36 2 12.28 2 8.5C2 5.42 4.42 3 7.5 3C9.24 3 10.91 3.81 12 5.09C13.09 3.81 14.76 3 16.5 3C19.58 3 22 5.42 22 8.5C22 12.28 18.6 15.36 13.45 20.04L12 21.35Z" fill="currentColor"/>
-                </svg>
+              Femigo
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-primary">
+                <path d="M12 21.35L10.55 20.03C5.4 15.36 2 12.28 2 8.5C2 5.42 4.42 3 7.5 3C9.24 3 10.91 3.81 12 5.09C13.09 3.81 14.76 3 16.5 3C19.58 3 22 5.42 22 8.5C22 12.28 18.6 15.36 13.45 20.04L12 21.35Z" fill="currentColor"/>
+              </svg>
             </div>
           </div>
         </CardHeader>
         <CardContent className="p-0 flex-1 flex flex-col min-h-0">
-            <div className="shrink-0 p-4 space-y-4">
-              <div className="flex flex-col items-center gap-2">
-                  <div className="relative w-full">
-                      <Circle className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input 
-                        ref={startInputRef} 
-                        value={startInputText} 
-                        onChange={(e) => setStartInputText(e.target.value)} 
-                        onBlur={() => handleGeocodeInput('start')}
-                        onFocus={() => setTimeout(() => {
-                           if (startInputText === 'Your Location') {
-                               setStartInputText('');
-                           }
-                        }, 100)} 
-                        className="pl-9 pr-10 bg-muted/20 dark:bg-card" placeholder="Start location or coordinates" />
-                       <Button type="button" variant="ghost" size="icon" onClick={fetchCurrentLocation} className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full" disabled={isFetchingLocation}>
-                         {isFetchingLocation ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4 text-primary" />}
-                       </Button>
-                  </div>
-
-                  <Button variant="outline" size="icon" onClick={handleSwapLocations} className="h-8 w-8 rounded-full">
-                      <ArrowRightLeft className="h-4 w-4"/>
+          <div className="shrink-0 p-4 space-y-4">
+            <div className="flex flex-col items-center gap-2">
+              <AddressAutocomplete
+                value={startInputText}
+                onChange={setStartInputText}
+                onSelect={(s) => { setStartPoint(s); setStartInputText(s.address); }}
+                placeholder="Start location or coordinates"
+                className="pl-9 pr-10 bg-muted/20 dark:bg-card"
+                icon={<Circle className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />}
+                rightSlot={
+                  <Button type="button" variant="ghost" size="icon" onClick={fetchCurrentLocation} className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full z-10" disabled={isFetchingLocation}>
+                    {isFetchingLocation ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4 text-primary" />}
                   </Button>
+                }
+              />
 
-                  <div className="relative w-full">
-                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
-                      <Input 
-                          ref={destinationInputRef} 
-                          value={destInputText} 
-                          onChange={(e) => setDestInputText(e.target.value)}
-                          onBlur={() => handleGeocodeInput('destination')}
-                          className="pl-9 bg-muted/20 dark:bg-card" placeholder="Destination or coordinates" />
-                  </div>
-              </div>
-              
-              <div className="flex items-center justify-around bg-muted p-1 rounded-full">
-                  {travelModes.map((mode) => (
-                      <Button 
-                          key={mode.name}
-                          variant="ghost" 
-                          className={cn("flex-1 rounded-full text-muted-foreground hover:text-foreground capitalize", travelMode === mode.name && "bg-primary/80 text-white hover:bg-primary/90 dark:text-primary-foreground")}
-                          onClick={() => setTravelMode(mode.name as TravelMode)}
-                      >
-                        <mode.icon className="h-5 w-5" />
-                      </Button>
-                  ))}
-              </div>
+              <Button variant="outline" size="icon" onClick={handleSwapLocations} className="h-8 w-8 rounded-full">
+                <ArrowRightLeft className="h-4 w-4"/>
+              </Button>
+
+              <AddressAutocomplete
+                value={destInputText}
+                onChange={setDestInputText}
+                onSelect={(s) => { setDestinationPoint(s); setDestInputText(s.address); }}
+                placeholder="Destination or coordinates"
+                className="pl-9 bg-muted/20 dark:bg-card"
+                icon={<MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary z-10" />}
+              />
             </div>
 
-            <div className="relative flex-1 w-full overflow-hidden min-h-0">
-                <Map center={mapCenter} zoom={mapZoom} gestureHandling={'greedy'} disableDefaultUI={true} mapId="a2b4a5d6e7f8g9h0" onCenterChanged={(e) => setMapCenter(e.detail.center)}>
-                    {userLocation && <AdvancedMarker position={userLocation} zIndex={5}><UserMarker /></AdvancedMarker>}
-                    {startPoint.location && <AdvancedMarker position={startPoint.location} zIndex={4}><StartPointMarker /></AdvancedMarker>}
-                    {destinationPoint.location && <AdvancedMarker position={destinationPoint.location} zIndex={4}><DestinationPointMarker /></AdvancedMarker>}
-                    {directions && <RoutePolylines routes={directions.routes} selectedRouteIndex={selectedRouteIndex} onRouteClick={onRouteClick} />}
-                    {isTracking && <LiveTrackingPolyline path={livePath} />}
-                </Map>
-                <Link href="/location/fullscreen" className="absolute top-2 right-2 z-10">
-                    <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 rounded-full bg-black/30 backdrop-blur-sm">
-                        <Maximize className="h-5 w-5" />
-                    </Button>
-                </Link>
-                 {isCalculating && (
-                  <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/50 backdrop-blur-sm">
-                      <div className="text-center space-y-4 text-foreground">
-                          <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
-                          <h2 className="text-xl font-bold">Calculating Routes...</h2>
-                      </div>
+            <div className="flex items-center justify-around bg-muted p-1 rounded-full">
+              {travelModes.map((mode) => (
+                <Button
+                  key={mode.name}
+                  variant="ghost"
+                  className={cn("flex-1 rounded-full text-muted-foreground hover:text-foreground capitalize", travelMode === mode.name && "bg-primary/80 text-white hover:bg-primary/90 dark:text-primary-foreground")}
+                  onClick={() => setTravelMode(mode.name)}
+                >
+                  <mode.icon className="h-5 w-5" />
+                </Button>
+              ))}
+            </div>
+            {travelMode === 'TRANSIT' && (
+              <p className="text-xs text-amber-500 -mt-2">Bus times are approximate — real-time transit schedules aren't available yet.</p>
+            )}
+          </div>
+
+          <div className="relative flex-1 w-full overflow-hidden min-h-0">
+            <MapContainer center={[mapCenter.lat, mapCenter.lng] as any} zoom={mapZoom} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {userLocation && userIcon && <Marker position={[userLocation.lat, userLocation.lng] as any} icon={userIcon} />}
+              {startPoint.location && startIcon && <Marker position={[startPoint.location.lat, startPoint.location.lng] as any} icon={startIcon} />}
+              {destinationPoint.location && destIcon && <Marker position={[destinationPoint.location.lat, destinationPoint.location.lng] as any} icon={destIcon} />}
+              {routes.map((route, index) => (
+                <Polyline
+                  key={index}
+                  positions={route.path.map(p => [p.lat, p.lng]) as any}
+                  pathOptions={{
+                    color: index === selectedRouteIndex ? '#ec4899' : '#808080',
+                    weight: index === selectedRouteIndex ? 6 : 4,
+                    opacity: index === selectedRouteIndex ? 0.9 : 0.5,
+                    dashArray: index === selectedRouteIndex ? undefined : '6 8',
+                  }}
+                  eventHandlers={{ click: () => setSelectedRouteIndex(index) }}
+                />
+              ))}
+              {isTracking && livePath.length > 1 && (
+                <Polyline positions={livePath.map(p => [p.lat, p.lng]) as any} pathOptions={{ color: '#0000FF', weight: 6, opacity: 0.9 }} />
+              )}
+            </MapContainer>
+
+            <Link href="/location/fullscreen" className="absolute top-2 right-2 z-[401]">
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 rounded-full bg-black/30 backdrop-blur-sm">
+                <Maximize className="h-5 w-5" />
+              </Button>
+            </Link>
+
+            {isCalculating && (
+              <div className="absolute inset-0 z-[401] flex items-center justify-center bg-background/50 backdrop-blur-sm">
+                <div className="text-center space-y-4 text-foreground">
+                  <Loader2 className="mx-auto h-12 w-12 animate-spin text-primary" />
+                  <h2 className="text-xl font-bold">Calculating Routes...</h2>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col shrink-0 overflow-y-auto max-h-[45vh]">
+            {routes.length > 0 && (
+              <div className="flex flex-col gap-3 p-4 border-t border-border">
+                <h3 className="font-bold text-lg text-foreground">Select a Route</h3>
+                {recommendation && (
+                  <div className="p-3 rounded-lg bg-green-900/50 border border-green-500/50 text-sm">
+                    <p className="font-bold text-green-300">AI Recommendation</p>
+                    <p className="text-white/80">{recommendation.reason}</p>
                   </div>
                 )}
-            </div>
-            
-            <div className="flex flex-col shrink-0 overflow-y-auto max-h-[45vh]">
-              {directions && directions.routes.length > 0 && routeDetails.length > 0 && (
-                  <div className="flex flex-col gap-3 p-4 border-t border-border">
-                      <h3 className="font-bold text-lg text-foreground">Select a Route</h3>
-                      {recommendation && (
-                          <div className="p-3 rounded-lg bg-green-900/50 border border-green-500/50 text-sm">
-                              <p className="font-bold text-green-300">AI Recommendation</p>
-                              <p className="text-white/80">{recommendation.reason}</p>
-                          </div>
-                      )}
-                      <div className="flex flex-col gap-3 pr-2">
-                          {directions.routes.map((route, index) => {
-                              const details = routeDetails[index];
-                              if (!details) return null;
-                              const isRecommended = recommendation && index === recommendation.index;
-                              return (
-                                  <div key={index} onClick={() => onRouteClick(index)} className={cn(
-                                      "p-4 rounded-xl cursor-pointer border-2 transition-all relative",
-                                      selectedRouteIndex === index ? "bg-primary/20 border-primary shadow-lg shadow-primary/20" : "border-border bg-card hover:bg-accent"
-                                  )}>
-                                      {isRecommended && (
-                                          <Badge className="absolute -top-2 -right-2 bg-green-500 text-white border-none">Recommended</Badge>
-                                      )}
-                                      <div className="flex justify-between items-start gap-4">
-                                        <div>
-                                          <p className="font-bold text-base text-foreground">{route.summary || `Route ${index + 1}`}</p>
-                                          <p className="text-sm text-muted-foreground">{route.legs[0].distance?.text} · {route.legs[0].duration?.text}</p>
-                                        </div>
-                                          <Button 
-                                              variant="secondary" 
-                                              size="sm" 
-                                              className="shrink-0"
-                                              onClick={(e) => {
-                                                  e.stopPropagation(); // Prevent route selection
-                                                  handleViewDetails(route, index);
-                                              }}
-                                          >
-                                              More Info
-                                          </Button>
-                                      </div>
-                                  </div>
-                              )
-                          })}
+                <div className="flex flex-col gap-3 pr-2">
+                  {routes.map((route, index) => (
+                    <div key={index} onClick={() => setSelectedRouteIndex(index)} className={cn(
+                      "p-4 rounded-xl cursor-pointer border-2 transition-all relative",
+                      selectedRouteIndex === index ? "bg-primary/20 border-primary shadow-lg shadow-primary/20" : "border-border bg-card hover:bg-accent"
+                    )}>
+                      <div className="flex gap-2 flex-wrap mb-2">
+                        {recommendation && index === recommendation.index && <Badge className="bg-green-500 text-white border-none">AI Recommended</Badge>}
+                        {index === fastestIndex && <Badge variant="secondary">Fastest</Badge>}
+                        {index === shortestIndex && <Badge variant="secondary">Shortest</Badge>}
+                        {route.isApproximate && <Badge variant="outline" className="text-amber-500 border-amber-500">Approximate</Badge>}
                       </div>
-                  </div>
-              )}
+                      <div className="flex justify-between items-start gap-4">
+                        <div>
+                          <p className="font-bold text-base text-foreground">{route.summary}</p>
+                          <p className="text-sm text-muted-foreground">{formatDistance(route.distanceMeters)} · {formatDuration(route.durationSeconds)}</p>
+                        </div>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={(e) => { e.stopPropagation(); handleViewDetails(route); }}
+                          disabled={!route.details}
+                        >
+                          More Info
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
-              <div className="flex flex-col gap-4 p-4 border-t border-border">
-                  <Button onClick={handleStartTracking} className="w-full py-6 text-lg font-bold rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50" disabled={!directions || isCalculating}>
-                      {isTracking ? "STOP" : "START"}
-                  </Button>
-                  <div className="flex justify-around items-center bg-muted p-2 rounded-2xl">
-                      <Dialog open={isShareOpen} onOpenChange={setIsShareOpen}>
-                          <DialogTrigger asChild>
-                              <Button variant="ghost" className="text-foreground font-semibold disabled:opacity-50" disabled={isTracking}>
-                                <Share2 className="mr-2 h-5 w-5 text-primary" />
-                                Share Live Location
-                              </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                              <DialogHeader>
-                                  <DialogTitle>Share Your Location</DialogTitle>
-                                  <DialogDescription>
-                                      Choose how you want to share a link to your live location. Anyone with the link can see where you are.
-                                  </DialogDescription>
-                              </DialogHeader>
-                              <div className="grid grid-cols-2 gap-4 pt-4">
-                                  <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => handleShare('contacts')}>
-                                      <Users className="h-6 w-6" /> Trusted Contacts
-                                  </Button>
-                                  <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => handleShare('whatsapp')}>
-                                      <MessageSquare className="h-6 w-6" /> WhatsApp
-                                  </Button>
-                                  <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => handleShare('email')}>
-                                      <Mail className="h-6 w-6" /> Email
-                                  </Button>
-                                  <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => handleShare('copy')}>
-                                      <Copy className="h-6 w-6" /> Copy Link
-                                  </Button>
-                              </div>
-                          </DialogContent>
-                      </Dialog>
-                      <Button variant="ghost" className="text-foreground font-semibold disabled:opacity-50" disabled={isTracking} onClick={handleStartTracking}>
-                          <Footprints className="mr-2 h-5 w-5 text-primary" />
-                          Track Me
+            <div className="flex flex-col gap-4 p-4 border-t border-border">
+              <Button onClick={handleStartTracking} className="w-full py-6 text-lg font-bold rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50" disabled={routes.length === 0 || isCalculating}>
+                {isTracking ? "STOP" : "START"}
+              </Button>
+              <div className="flex justify-around items-center bg-muted p-2 rounded-2xl">
+                <Dialog open={isShareOpen} onOpenChange={setIsShareOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="ghost" className="text-foreground font-semibold disabled:opacity-50" disabled={isTracking}>
+                      <Share2 className="mr-2 h-5 w-5 text-primary" />
+                      Share Live Location
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Share Your Location</DialogTitle>
+                      <DialogDescription>
+                        Choose how you want to share a link to your live location. Anyone with the link can see where you are.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid grid-cols-2 gap-4 pt-4">
+                      <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => handleShare('contacts')}>
+                        <Users className="h-6 w-6" /> Trusted Contacts
                       </Button>
-                  </div>
+                      <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => handleShare('whatsapp')}>
+                        <MessageSquare className="h-6 w-6" /> WhatsApp
+                      </Button>
+                      <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => handleShare('email')}>
+                        <Mail className="h-6 w-6" /> Email
+                      </Button>
+                      <Button variant="outline" className="h-20 flex-col gap-2" onClick={() => handleShare('copy')}>
+                        <Copy className="h-6 w-6" /> Copy Link
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+                <Button variant="ghost" className="text-foreground font-semibold disabled:opacity-50" disabled={isTracking} onClick={handleStartTracking}>
+                  <Footprints className="mr-2 h-5 w-5 text-primary" />
+                  Track Me
+                </Button>
               </div>
             </div>
+          </div>
         </CardContent>
       </Card>
     </div>
   );
 }
 
-
 export default function LocationPage() {
-  if (!GOOGLE_MAPS_API_KEY) {
-    return (
-        <div className="flex h-screen w-full items-center justify-center bg-background p-4 text-center">
-            <div className="rounded-lg bg-card p-8 text-card-foreground">
-                <h1 className="text-xl font-bold text-destructive">Configuration Error</h1>
-                <p className="mt-2 text-muted-foreground">Google Maps API Key is missing. Please add <code className="font-mono bg-muted px-1 py-0.5 rounded">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> to your environment variables.</p>
-            </div>
-        </div>
-    );
-  }
-
   return (
     <main className="h-screen w-full flex flex-col bg-background">
-       <APIProvider apiKey={GOOGLE_MAPS_API_KEY as string} libraries={['marker', 'places', 'routes', 'geometry', 'geocoding']}>
-        <Suspense fallback={
-          <div className="flex h-screen w-full items-center justify-center bg-background">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
-        }>
-          <LocationPlanner />
-        </Suspense>
-      </APIProvider>
+      <LocationPlanner />
     </main>
   );
 }
