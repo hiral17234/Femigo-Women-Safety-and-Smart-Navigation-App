@@ -135,3 +135,20 @@ export function formatDuration(seconds: number): string {
   const remMins = mins % 60;
   return `${hrs}h ${remMins}m`;
 }
+// Haversine formula — total distance covered along a raw GPS path, in meters.
+export function computePathDistance(path: LatLng[]): number {
+  if (path.length < 2) return 0;
+  const R = 6371000; // Earth radius in meters
+  let total = 0;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1];
+    const b = path[i];
+    const dLat = (b.lat - a.lat) * (Math.PI / 180);
+    const dLng = (b.lng - a.lng) * (Math.PI / 180);
+    const lat1 = a.lat * (Math.PI / 180);
+    const lat2 = b.lat * (Math.PI / 180);
+    const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    total += R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  }
+  return total;
+}
