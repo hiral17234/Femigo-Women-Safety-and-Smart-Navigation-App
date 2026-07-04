@@ -156,7 +156,7 @@ function LocationPlanner() {
 
  useEffect(() => {
     // Restore an in-progress trip if one exists (e.g. after a page reload while tracking).
-    const cached = loadActiveTripLocally();
+   const cached = loadActiveTripLocally();
     if (cached) {
       tripIdRef.current = cached.tripId;
       setStartPoint({ address: cached.startAddress, location: cached.startLocation });
@@ -164,11 +164,22 @@ function LocationPlanner() {
       setDestinationPoint({ address: cached.destinationAddress, location: cached.destinationLocation });
       setDestInputText(cached.destinationAddress);
       setTravelMode(cached.travelMode as TravelMode);
-     setLivePath(cached.path);
+      setLivePath(cached.path);
       rawPathRef.current = [];
-      setUserLocation(cached.path[cached.path.length - 1] || cached.startLocation);
-      setIsTracking(true);
+      const restoredUserLocation = cached.path[cached.path.length - 1] || cached.startLocation;
+      setUserLocation(restoredUserLocation);
 
+      // Set the map view immediately using cached data, rather than waiting on a fresh GPS fix
+      // (which can take a moment after reload) — prevents a brief fall-back to the default India-wide view.
+      if (restoredUserLocation && cached.destinationLocation) {
+        setMapCenter({
+          lat: (restoredUserLocation.lat + cached.destinationLocation.lat) / 2,
+          lng: (restoredUserLocation.lng + cached.destinationLocation.lng) / 2,
+        });
+        setMapZoom(15);
+      }
+
+      setIsTracking(true);
       // routes/destinationPoint state was set above, but the route-fetching effect needs
       // startPoint.location/destinationPoint.location to be set to actually recalculate the polyline.
       // Since setState is async, we re-fetch directly here to guarantee the route line reappears.
