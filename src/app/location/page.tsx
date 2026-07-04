@@ -182,6 +182,25 @@ function LocationPlanner() {
       return; // Skip the normal fresh-load flow below
     }
 
+   // If there's no active trip, check for cached planning state (e.g. returning from route-details).
+    try {
+      const planningCache = sessionStorage.getItem('femigo-planning-state');
+      if (planningCache) {
+        const parsed = JSON.parse(planningCache);
+        setStartInputText(parsed.startInputText || '');
+        setStartPoint(parsed.startPoint || { address: '', location: null });
+        setDestInputText(parsed.destInputText || '');
+        setDestinationPoint(parsed.destinationPoint || { address: '', location: null });
+        setTravelMode(parsed.travelMode || 'WALKING');
+        if (parsed.startPoint?.location) {
+          setUserLocation(parsed.startPoint.location);
+        }
+        return; // Skip the fresh-load/query-param flow below
+      }
+    } catch (e) {
+      console.warn('Failed to restore planning state:', e);
+    }
+
     const destName = searchParams.get('destinationName');
     const destLat = searchParams.get('destinationLat');
     const destLng = searchParams.get('destinationLng');
@@ -232,6 +251,20 @@ function LocationPlanner() {
     }
     if (pointToCenter) setMapCenter(pointToCenter);
   }, [startPoint.location, destinationPoint.location, routes.length]);
+
+  // Persist planning state (before a trip is actually started) so navigating to route-details
+  // and back — or a reload — doesn't wipe out what the user has already set up.
+  useEffect(() => {
+    if (isTracking) return; // active-trip persistence already handles this case separately
+    if (!startPoint.location && !destinationPoint.location) return;
+    try {
+      sessionStorage.setItem('femigo-planning-state', JSON.stringify({
+        startInputText, startPoint, destInputText, destinationPoint, travelMode,
+      }));
+    } catch (e) {
+      console.warn('Failed to cache planning state:', e);
+    }
+  }, [startInputText, startPoint, destInputText, destinationPoint, travelMode, isTracking]);
 
   // While actively tracking, follow the user's live position — Ola-style.
  // While actively tracking, keep both the user's live position AND the destination visible —
@@ -434,6 +467,7 @@ const handleStartTracking = async () => {
         destinationAddress: destinationPoint.address,
         travelMode,
       });
+      sessionStorage.removeItem('femigo-planning-state');
 
       saveActiveTripLocally({
         tripId,
