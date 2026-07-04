@@ -26,12 +26,18 @@ export async function reverseGeocode(point: LatLng): Promise<string> {
     const res = await fetch(url);
     if (!res.ok) return "Your Location";
     const data = await res.json();
-    return data.features?.[0]?.properties?.formatted || "Your Location";
+    const props = data.features?.[0]?.properties;
+    if (!props) return "Your Location";
+    // Prefer street-level detail over a landmark/POI name, which Geoapify sometimes
+    // substitutes when you're near a well-known building.
+    if (props.street) {
+      return [props.housenumber, props.street, props.city].filter(Boolean).join(', ');
+    }
+    return props.formatted || "Your Location";
   } catch {
     return "Your Location";
   }
 }
-
 // ---- Autocomplete suggestions ----
 export type AutocompleteSuggestion = { address: string; location: LatLng };
 
