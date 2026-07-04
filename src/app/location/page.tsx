@@ -204,6 +204,13 @@ function LocationPlanner() {
     if (pointToCenter) setMapCenter(pointToCenter);
   }, [startPoint.location, destinationPoint.location, routes.length]);
 
+  // While actively tracking, follow the user's live position — Ola-style.
+  useEffect(() => {
+    if (!isTracking || !userLocation) return;
+    setMapCenter(userLocation);
+    setMapZoom(17);
+  }, [isTracking, userLocation]);
+
   // Fetch routes when parameters change
   useEffect(() => {
     if (!startPoint.location || !destinationPoint.location) {
