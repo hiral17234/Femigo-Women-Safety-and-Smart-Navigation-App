@@ -17,7 +17,8 @@ import { Badge } from '@/components/ui/badge';
 import { type RouteSafetyOutput } from '@/ai/types';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AddressAutocomplete } from '@/components/location/address-autocomplete';
-import { geocodeAddress, reverseGeocode, getRoutes, formatDistance, formatDuration, type LatLng, type TravelMode, type RouteResult } from '@/lib/mapping';
+import { geocodeAddress, reverseGeocode, getRoutes, formatDistance, formatDuration, computePathDistance, type LatLng, type TravelMode, type RouteResult } from '@/lib/mapping';
+import { startTrip, updateTripProgress, endTrip, saveActiveTripLocally, loadActiveTripLocally, clearActiveTripLocally, type ActiveTripCache } from '@/lib/trip-storage';
 
 // Leaflet needs `window`, so map pieces are loaded client-side only.
 const MapContainer = nextDynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false });
@@ -101,6 +102,9 @@ function LocationPlanner() {
   const rawPathRef = useRef<LatLng[]>([]);
   const watchIdRef = useRef<number | null>(null);
   const isRecalculatingRef = useRef(false);
+  const isRecalculatingRef = useRef(false);
+  const tripIdRef = useRef<string | null>(null);
+  const lastProgressSaveRef = useRef<number>(0);
 
   const [isShareOpen, setIsShareOpen] = useState(false);
 
@@ -152,7 +156,24 @@ function LocationPlanner() {
     );
   }, [handleSetCurrentLocation, toast]);
 
-  useEffect(() => {
+ useEffect(() => {
+    // Restore an in-progress trip if one exists (e.g. after a page reload while tracking).
+    const cached = loadActiveTripLocally();
+    if (cached) {
+      tripIdRef.current = cached.tripId;
+      setStartPoint({ address: cached.startAddress, location: cached.startLocation });
+      setStartInputText(cached.startAddress);
+      setDestinationPoint({ address: cached.destinationAddress, location: cached.destinationLocation });
+      setDestInputText(cached.destinationAddress);
+      setTravelMode(cached.travelMode as TravelMode);
+      setLivePath(cached.path);
+      rawPathRef.current = [];
+      setUserLocation(cached.path[cached.path.length - 1] || cached.startLocation);
+      setIsTracking(true);
+      toast({ title: "Resumed your trip", description: "We restored your active trip from before the reload." });
+      return; // Skip the normal fresh-load flow below
+    }
+
     const destName = searchParams.get('destinationName');
     const destLat = searchParams.get('destinationLat');
     const destLng = searchParams.get('destinationLng');
@@ -164,7 +185,7 @@ function LocationPlanner() {
     fetchCurrentLocation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
+  
   // DMS coordinate detection
   useEffect(() => {
     const dmsCoords = parseDMSToLatLng(startInputText);
@@ -302,7 +323,19 @@ function LocationPlanner() {
         if (newSnappedPoints && newSnappedPoints.length > 0) {
           setLivePath(prev => {
             const prevPath = prev.length > 0 ? prev.slice(0, -1) : [];
-            return [...prevPath, ...newSnappedPoints];
+            const updated = [...prevPath, ...newSnappedPoints];
+
+            // Persist locally on every tick (cheap), but only write to Firestore every ~30s (quota-friendly).
+            const cached = loadActiveTripLocally();
+            if (cached) saveActiveTripLocally({ ...cached, path: updated });
+
+            const now = Date.now();
+            if (tripIdRef.current && now - lastProgressSaveRef.current > 30000) {
+              lastProgressSaveRef.current = now;
+              updateTripProgress(tripIdRef.current, updated, computePathDistance(updated));
+            }
+
+            return updated;
           });
         }
       } catch (e) {
@@ -343,17 +376,48 @@ function LocationPlanner() {
     setDestInputText(startInputText);
   };
 
-  const handleStartTracking = () => {
+const handleStartTracking = async () => {
     if (isTracking) {
+      // Stopping: finalize the trip in Firestore and clear the local cache.
       setIsTracking(false);
+      if (tripIdRef.current) {
+        const totalDistance = computePathDistance(livePath);
+        const startedAt = loadActiveTripLocally()?.startedAt;
+        const durationSeconds = startedAt ? (Date.now() - new Date(startedAt).getTime()) / 1000 : 0;
+        await endTrip(tripIdRef.current, livePath, totalDistance, durationSeconds);
+      }
+      clearActiveTripLocally();
+      tripIdRef.current = null;
     } else {
-      if (routes.length === 0) {
+      if (routes.length === 0 || !startPoint.location || !destinationPoint.location) {
         toast({ variant: 'destructive', title: 'No route selected to start tracking.' });
         return;
       }
-      setLivePath(userLocation ? [userLocation] : []);
+      const initialPath = userLocation ? [userLocation] : [];
+      setLivePath(initialPath);
       rawPathRef.current = [];
       setIsTracking(true);
+
+      const tripId = `trip-${Date.now()}`;
+      tripIdRef.current = tripId;
+
+      await startTrip({
+        id: tripId,
+        startAddress: startPoint.address,
+        destinationAddress: destinationPoint.address,
+        travelMode,
+      });
+
+      saveActiveTripLocally({
+        tripId,
+        startAddress: startPoint.address,
+        startLocation: startPoint.location,
+        destinationAddress: destinationPoint.address,
+        destinationLocation: destinationPoint.location,
+        travelMode,
+        path: initialPath,
+        startedAt: new Date().toISOString(),
+      });
     }
   };
 
