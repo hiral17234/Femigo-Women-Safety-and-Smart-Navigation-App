@@ -98,9 +98,8 @@ function LocationPlanner() {
 
   const [isTracking, setIsTracking] = useState(false);
   const [livePath, setLivePath] = useState<LatLng[]>([]);
-  const rawPathRef = useRef<LatLng[]>([]);
+ const rawPathRef = useRef<LatLng[]>([]);
   const watchIdRef = useRef<number | null>(null);
-  const isRecalculatingRef = useRef(false);
   const isRecalculatingRef = useRef(false);
   const tripIdRef = useRef<string | null>(null);
   const lastProgressSaveRef = useRef<number>(0);
