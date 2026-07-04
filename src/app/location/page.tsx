@@ -145,8 +145,8 @@ function LocationPlanner() {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         handleSetCurrentLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-        toast.dismiss();
       },
+      
       () => {
         toast({ variant: 'destructive', title: 'Could not get your location.', description: "Please enable location services and try again." });
         setIsFetchingLocation(false);
