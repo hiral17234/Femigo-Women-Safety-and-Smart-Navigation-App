@@ -4,8 +4,7 @@ import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import nextDynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Car, Bike, TramFront, Footprints, ArrowRightLeft, Share2, MapPin, Circle, Loader2, Maximize, Users, MessageSquare, Mail, Copy, LocateFixed } from 'lucide-react';
-
+import { ArrowLeft, Car, Bike, TramFront, Footprints, ArrowRightLeft, Share2, MapPin, Circle, Loader2, Maximize, Users, MessageSquare, Mail, Copy, LocateFixed, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -499,6 +498,11 @@ const handleStartTracking = async () => {
               </svg>
             </div>
           </div>
+          <Link href="/location/history">
+            <Button variant="ghost" size="icon" className="text-foreground hover:bg-accent rounded-full">
+              <Clock className="h-5 w-5" />
+            </Button>
+          </Link>
         </CardHeader>
         <CardContent className="p-0 flex-1 flex flex-col min-h-0">
           <div className={cn("shrink-0 p-4 space-y-4", isTracking && "hidden")}>
