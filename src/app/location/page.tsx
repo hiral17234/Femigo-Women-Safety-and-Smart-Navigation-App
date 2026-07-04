@@ -311,13 +311,18 @@ function LocationPlanner() {
         setUserLocation(newLocation);
         rawPathRef.current.push(newLocation);
       },
-      () => {
-        toast({ variant: "destructive", title: "Could not get your location." });
-        setIsTracking(false);
+      (err) => {
+        // A single dropped GPS reading is common and shouldn't kill the whole tracking session —
+        // only warn, don't stop tracking. Genuinely fatal errors (e.g. permission denied) still need attention.
+        if (err.code === err.PERMISSION_DENIED) {
+          toast({ variant: "destructive", title: "Location permission denied.", description: "Please enable location access to continue tracking." });
+          setIsTracking(false);
+        } else {
+          console.warn("Transient location error:", err.message);
+        }
       },
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
     );
-
     return () => {
       clearInterval(snapInterval);
       if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
@@ -425,7 +430,7 @@ function LocationPlanner() {
           </div>
         </CardHeader>
         <CardContent className="p-0 flex-1 flex flex-col min-h-0">
-          <div className="shrink-0 p-4 space-y-4">
+          <div className={cn("shrink-0 p-4 space-y-4", isTracking && "hidden")}>
             <div className="flex flex-col items-center gap-2">
               <AddressAutocomplete
                 value={startInputText}
@@ -516,8 +521,20 @@ function LocationPlanner() {
             )}
           </div>
 
-          <div className="flex flex-col shrink-0 overflow-y-auto max-h-[45vh]">
-            {routes.length > 0 && (
+          {isTracking && (
+            <div className="shrink-0 p-4 border-t border-border flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Heading to</p>
+                <p className="font-semibold text-foreground truncate max-w-[200px]">{destinationPoint.address}</p>
+              </div>
+              <Button onClick={handleStartTracking} variant="destructive" className="rounded-full px-6">
+                STOP
+              </Button>
+            </div>
+          )}
+
+          <div className={cn("flex flex-col shrink-0 overflow-y-auto max-h-[45vh]", isTracking && "hidden")}>
+            {routes.length > 0 && !isTracking && (
               <div className="flex flex-col gap-3 p-4 border-t border-border">
                 <h3 className="font-bold text-lg text-foreground">Select a Route</h3>
                 {recommendation && (
