@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { type RouteSafetyOutput as RouteDetail } from '@/ai/types';
+import { formatDistance, formatDuration } from '@/lib/mapping';
 
 function RouteDetailsContent() {
     const router = useRouter();
@@ -79,7 +80,7 @@ function RouteDetailsContent() {
                 <CardHeader className="text-center p-0 pb-6">
                     <CardTitle className="text-2xl font-bold tracking-tight">Route Details</CardTitle>
                     <CardDescription className="text-purple-200/70">
-                        {route.summary} ({route.legs[0].distance?.text})
+{route.summary} ({formatDistance(route.distanceMeters)} · {formatDuration(route.durationSeconds)})
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0 space-y-6">
