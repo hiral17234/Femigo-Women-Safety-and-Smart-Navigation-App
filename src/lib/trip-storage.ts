@@ -68,7 +68,12 @@ export async function startTrip(trip: {
     durationSeconds: 0,
   };
 
-  await setDoc(doc(tripsCollection(uid), trip.id), tripDoc);
+try {
+    await setDoc(doc(tripsCollection(uid), trip.id), tripDoc);
+    console.log("startTrip: successfully saved trip", trip.id);
+  } catch (e) {
+    console.error("startTrip: setDoc failed", e);
+  }
 }
 
 export async function updateTripProgress(
