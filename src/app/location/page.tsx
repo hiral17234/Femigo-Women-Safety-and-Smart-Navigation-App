@@ -234,11 +234,30 @@ function LocationPlanner() {
   }, [startPoint.location, destinationPoint.location, routes.length]);
 
   // While actively tracking, follow the user's live position — Ola-style.
+ // While actively tracking, keep both the user's live position AND the destination visible —
+  // auto-fitting zoom/center as the distance between them shrinks.
   useEffect(() => {
-    if (!isTracking || !userLocation) return;
-    setMapCenter(userLocation);
-    setMapZoom(17);
-  }, [isTracking, userLocation]);
+    if (!isTracking || !userLocation || !destinationPoint.location) return;
+
+    const dest = destinationPoint.location;
+    const midpoint: LatLng = {
+      lat: (userLocation.lat + dest.lat) / 2,
+      lng: (userLocation.lng + dest.lng) / 2,
+    };
+    setMapCenter(midpoint);
+
+    // Rough zoom-from-distance heuristic — tuned for typical city-scale trips.
+    const distanceMeters = computePathDistance([userLocation, dest]);
+    let zoom = 17;
+    if (distanceMeters > 50) zoom = 16;
+    if (distanceMeters > 150) zoom = 15;
+    if (distanceMeters > 400) zoom = 14;
+    if (distanceMeters > 800) zoom = 13;
+    if (distanceMeters > 1500) zoom = 12;
+    if (distanceMeters > 3000) zoom = 11;
+    if (distanceMeters > 6000) zoom = 10;
+    setMapZoom(zoom);
+  }, [isTracking, userLocation, destinationPoint.location]);
 
   // Fetch routes when parameters change
   useEffect(() => {
