@@ -50,7 +50,10 @@ export async function startTrip(trip: {
   travelMode: string;
 }): Promise<void> {
   const uid = auth.currentUser?.uid;
-  if (!uid) return;
+  if (!uid) {
+    console.error("startTrip: no authenticated user (auth.currentUser is null) — trip will not be saved to Firestore.");
+    return;
+  }
 
   const tripDoc: Trip = {
     id: trip.id,
