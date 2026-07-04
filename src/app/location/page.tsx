@@ -164,10 +164,20 @@ function LocationPlanner() {
       setDestinationPoint({ address: cached.destinationAddress, location: cached.destinationLocation });
       setDestInputText(cached.destinationAddress);
       setTravelMode(cached.travelMode as TravelMode);
-      setLivePath(cached.path);
+     setLivePath(cached.path);
       rawPathRef.current = [];
       setUserLocation(cached.path[cached.path.length - 1] || cached.startLocation);
       setIsTracking(true);
+
+      // routes/destinationPoint state was set above, but the route-fetching effect needs
+      // startPoint.location/destinationPoint.location to be set to actually recalculate the polyline.
+      // Since setState is async, we re-fetch directly here to guarantee the route line reappears.
+      getRoutes(cached.travelMode as TravelMode, cached.startLocation, cached.destinationLocation).then(results => {
+        if (results.length > 0) {
+          setRoutes(results.map(r => ({ ...r })));
+        }
+      });
+
       toast({ title: "Resumed your trip", description: "We restored your active trip from before the reload." });
       return; // Skip the normal fresh-load flow below
     }
