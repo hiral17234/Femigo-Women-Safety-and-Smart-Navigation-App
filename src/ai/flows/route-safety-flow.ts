@@ -1,14 +1,30 @@
-
 'use server';
 /**
  * @fileOverview An AI flow for generating plausible safety details for a given route.
  *
  * - getRouteSafetyDetails - A function that returns safety insights for a route.
  */
-
 import {ai} from '@/ai/genkit';
 import { RouteSafetyInputSchema, RouteSafetyOutputSchema, type RouteSafetyInput, type RouteSafetyOutput } from '@/ai/types';
 
+const routeSafetyPrompt = ai.definePrompt({
+  name: 'routeSafetyPrompt',
+  input: { schema: RouteSafetyInputSchema },
+  output: { schema: RouteSafetyOutputSchema },
+  model: 'googleai/gemini-2.5-flash',
+  prompt: `You are a route safety analyst for Femigo, a women's safety app in India. You're given basic route information and must produce a realistic safety assessment.
+
+  Route summary: {{summary}}
+  Distance: {{distance}}
+  Duration: {{duration}}
+
+  Since you don't have live traffic/crime feeds, use your general knowledge of typical Indian urban/suburban road conditions to produce a REALISTIC, PLAUSIBLE assessment — not overly optimistic, not alarmist. Vary your assessment sensibly based on the route summary and distance (e.g. a route through a named market or narrow lane may warrant more caution than a route along a main highway).
+
+  Be clear and honest in your written fields that this is a general estimate, not verified real-time data — e.g. "Typically a well-traveled route, though always stay alert" rather than an authoritative claim.
+
+  Return your structured assessment now.
+  `,
+});
 
 const routeSafetyFlow = ai.defineFlow(
     {
@@ -17,24 +33,27 @@ const routeSafetyFlow = ai.defineFlow(
       outputSchema: RouteSafetyOutputSchema,
     },
     async (input) => {
-      // DEMO MODE: Bypass live AI call and return hardcoded data.
-      console.log("Route Safety in DEMO MODE");
-      
-      const qualities: ('Good' | 'Moderate' | 'Poor')[] = ['Good', 'Moderate', 'Poor'];
-      const lightings: ('Well-lit' | 'Partially-lit' | 'Poorly-lit')[] = ['Well-lit', 'Partially-lit', 'Poorly-lit'];
-      const crowds: ('Low' | 'Medium' | 'High')[] = ['Low', 'Medium', 'High'];
-
-      return {
-        roadQuality: qualities[Math.floor(Math.random() * qualities.length)],
-        incidents: `${Math.floor(Math.random() * 3)} minor incidents`,
-        reviewsCount: Math.floor(Math.random() * 200) + 50,
-        lighting: lightings[Math.floor(Math.random() * lightings.length)],
-        crowdedness: crowds[Math.floor(Math.random() * crowds.length)],
-        safetySummary: 'A popular and generally safe route used by many commuters.',
-        crimeSummary: 'Crime rates are lower than the city average in this area.',
-        policeInfo: 'Regular police patrols are common along this route.',
-        weatherInfo: 'Current weather is clear with good visibility.',
-      };
+      try {
+        const { output } = await routeSafetyPrompt(input);
+        if (!output) {
+          throw new Error("The AI model did not return a valid response.");
+        }
+        return output;
+      } catch (e) {
+        console.error("Route safety flow failed, falling back to a generic assessment", e);
+        // Fallback so the UI never breaks even if the AI call fails — clearly generic, not fake-specific.
+        return {
+          roadQuality: 'Moderate',
+          incidents: 'No data available',
+          reviewsCount: 0,
+          lighting: 'Partially-lit',
+          crowdedness: 'Medium',
+          safetySummary: 'Could not generate a safety assessment for this route right now.',
+          crimeSummary: 'No data available.',
+          policeInfo: 'No data available.',
+          weatherInfo: 'No data available.',
+        };
+      }
     }
 );
 
