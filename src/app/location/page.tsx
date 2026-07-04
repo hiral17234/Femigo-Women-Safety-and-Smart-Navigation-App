@@ -183,7 +183,7 @@ function LocationPlanner() {
     }
 
    // If there's no active trip, check for cached planning state (e.g. returning from route-details).
-    try {
+   try {
       const planningCache = sessionStorage.getItem('femigo-planning-state');
       if (planningCache) {
         const parsed = JSON.parse(planningCache);
@@ -192,6 +192,9 @@ function LocationPlanner() {
         setDestInputText(parsed.destInputText || '');
         setDestinationPoint(parsed.destinationPoint || { address: '', location: null });
         setTravelMode(parsed.travelMode || 'WALKING');
+        if (parsed.routes) setRoutes(parsed.routes);
+        if (parsed.recommendation) setRecommendation(parsed.recommendation);
+        if (typeof parsed.selectedRouteIndex === 'number') setSelectedRouteIndex(parsed.selectedRouteIndex);
         if (parsed.startPoint?.location) {
           setUserLocation(parsed.startPoint.location);
         }
@@ -254,17 +257,17 @@ function LocationPlanner() {
 
   // Persist planning state (before a trip is actually started) so navigating to route-details
   // and back — or a reload — doesn't wipe out what the user has already set up.
-  useEffect(() => {
+useEffect(() => {
     if (isTracking) return; // active-trip persistence already handles this case separately
     if (!startPoint.location && !destinationPoint.location) return;
     try {
       sessionStorage.setItem('femigo-planning-state', JSON.stringify({
-        startInputText, startPoint, destInputText, destinationPoint, travelMode,
+        startInputText, startPoint, destInputText, destinationPoint, travelMode, routes, recommendation, selectedRouteIndex,
       }));
     } catch (e) {
       console.warn('Failed to cache planning state:', e);
     }
-  }, [startInputText, startPoint, destInputText, destinationPoint, travelMode, isTracking]);
+  }, [startInputText, startPoint, destInputText, destinationPoint, travelMode, isTracking, routes, recommendation, selectedRouteIndex]);
 
   // While actively tracking, follow the user's live position — Ola-style.
  // While actively tracking, keep both the user's live position AND the destination visible —
