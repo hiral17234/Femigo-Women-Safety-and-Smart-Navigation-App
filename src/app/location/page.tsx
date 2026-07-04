@@ -24,6 +24,7 @@ const MapContainer = nextDynamic(() => import('react-leaflet').then(m => m.MapCo
 const TileLayer = nextDynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false });
 const Marker = nextDynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false });
 const Polyline = nextDynamic(() => import('react-leaflet').then(m => m.Polyline), { ssr: false });
+const MapUpdater = nextDynamic(() => import('@/components/location/map-updater').then(m => m.MapUpdater), { ssr: false });
 
 type Place = { address: string; location: LatLng | null };
 type RouteDetail = RouteSafetyOutput & { isGenerated?: boolean };
@@ -477,6 +478,7 @@ function LocationPlanner() {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
+              <MapUpdater center={[mapCenter.lat, mapCenter.lng]} zoom={mapZoom} />
               {userLocation && userIcon && <Marker position={[userLocation.lat, userLocation.lng] as any} icon={userIcon} />}
               {startPoint.location && startIcon && <Marker position={[startPoint.location.lat, startPoint.location.lng] as any} icon={startIcon} />}
               {destinationPoint.location && destIcon && <Marker position={[destinationPoint.location.lat, destinationPoint.location.lng] as any} icon={destIcon} />}
