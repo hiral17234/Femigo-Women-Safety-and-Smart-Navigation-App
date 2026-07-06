@@ -2,7 +2,7 @@
 <div align="center">
 
 # 🌸 Femigo
-### AI-Powered Women's Safety & Smart Companion Platform
+###  Women's Safety & Smart Navigation Platform
 
 *Empowering women through intelligent safety, proactive protection, and compassionate AI.*
 
