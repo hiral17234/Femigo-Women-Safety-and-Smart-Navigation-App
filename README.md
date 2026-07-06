@@ -1,140 +1,274 @@
-# 🌸 Femigo – Women's Safety & Smart Navigation Platform
 
-> A comprehensive women’s safety platform that combines AI-powered assistance, emergency response, real-time location services, and emotional well-being features into a single mobile application.
+<div align="center">
 
-![Next.js](https://img.shields.io/badge/Next.js-14-black)
-![TypeScript](https://img.shields.io/badge/TypeScript-blue)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4)
-![Firebase](https://img.shields.io/badge/Firebase-FFCA28)
-![ShadCN UI](https://img.shields.io/badge/ShadCN_UI-black)
+# 🌸 Femigo
+### AI-Powered Women's Safety & Smart Companion Platform
+
+*Empowering women through intelligent safety, proactive protection, and compassionate AI.*
+
+![Next.js](https://img.shields.io/badge/Next.js-14-black?logo=next.js)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript)
+![Firebase](https://img.shields.io/badge/Firebase-FFCA28?logo=firebase)
 ![Botpress](https://img.shields.io/badge/Botpress-AI-purple)
-![Leaflet](https://img.shields.io/badge/Leaflet-199900)
 ![Gemini AI](https://img.shields.io/badge/Gemini-AI-blue)
+![Leaflet](https://img.shields.io/badge/Leaflet-199900)
+
+</div>
 
 ---
 
-# 📖 Overview
+# 🌍 The Problem
 
-**Femigo** is an AI-powered women's safety application designed to provide both **physical security** and **emotional support**.
+Women's safety applications often become useful **only after an emergency occurs**. Most rely on a panic button, leaving users without guidance before or during potentially unsafe situations.
 
-The platform combines emergency assistance, intelligent navigation, live location tracking, and an empathetic AI companion named **Sangini** to help women feel safer and more confident during their daily lives.
+**Femigo** was built with a different vision.
 
-Rather than being limited to emergency situations, Femigo serves as a proactive safety companion by offering continuous support, wellness features, and safety-aware recommendations.
+Rather than functioning solely as an emergency application, Femigo serves as an **AI-powered safety ecosystem** that combines intelligent identity verification, emergency response, smart navigation, emotional well-being, and a personal AI companion into one seamless platform.
 
 ---
 
-# ✨ Features
+# ✨ Key Highlights
 
-## 🤖 Sangini – AI Companion
+- 🤖 AI Companion (Sangini)
+- 🔐 Women-Only Secure Verification
+- 🚨 One-Tap Emergency SOS
+- 📍 Live GPS Tracking
+- 🛣 AI-Assisted Safe Route Navigation
+- 🛡 Nearby Threat Detection
+- 👥 Trusted Guardian Network
+- 📝 Community Safety Reporting
+- ❤️ Mental Wellness Center
+- 🧠 AI Safety Intelligence Engine
 
-Sangini is an empathetic AI assistant developed using **Botpress Studio**.
+---
 
-It provides:
+# 🔐 Women-Only Secure Verification
 
-- Natural conversations
-- Emotional support
+Femigo implements a multi-stage verification process to create a trusted environment exclusively for women.
+
+Unlike conventional applications that rely only on email or phone authentication, Femigo combines computer vision, AI, and identity verification before granting access.
+
+## Verification Workflow
+
+### 📷 Step 1 — Live Selfie Capture
+
+The user captures a live selfie during registration.
+
+This helps ensure that verification is performed using a real person instead of uploaded or reused images.
+
+---
+
+### 👩 Step 2 — AI Gender Verification
+
+The captured selfie is analyzed using AI-based facial classification to verify that the user is female.
+
+Only users who successfully pass this verification proceed to the next stage.
+
+---
+
+### 🪪 Step 3 — Aadhaar Verification
+
+The user submits Aadhaar details for identity verification.
+
+The system performs:
+
+- Aadhaar number validation
+- Identity consistency checks
+- Document verification
+
+---
+
+### 🧑 Step 4 — Face Matching
+
+The live selfie is compared with the photograph present on the uploaded Aadhaar document using facial recognition techniques.
+
+This helps reduce identity misuse and fake registrations.
+
+---
+
+### 📝 Step 5 — Name Verification
+
+The entered user information is matched with the Aadhaar document to ensure identity consistency.
+
+---
+
+### ✅ Secure Access
+
+Access to Femigo is granted only after all verification stages are successfully completed.
+
+This multi-layered verification pipeline helps create a secure, trusted, and women-exclusive platform.
+
+---
+
+# 🤖 Sangini — AI Companion
+
+Sangini is Femigo's intelligent AI companion developed using **Botpress Studio**.
+
+Unlike traditional rule-based chatbots, Sangini provides natural conversations while acting as a supportive friend capable of assisting users throughout their journey.
+
+### Capabilities
+
 - Safety guidance
-- Motivational interactions
-- Women's health and safety information
-- Intelligent assistance throughout the application
+- Emotional support
+- Motivational conversations
+- Women's health awareness
+- Local assistance
+- Everyday guidance
+- Personalized interactions
 
 ---
 
-## 🚨 Emergency SOS
+# 🚨 Smart Emergency Response
 
-- One-tap emergency activation
-- Instant SOS notifications
-- Emergency contact alerts
-- Quick distress response
+During emergencies, Femigo enables immediate assistance through an integrated emergency module.
 
----
+Features include:
 
-## 📍 Live Location Tracking
-
-- Real-time GPS tracking
-- Location sharing with trusted contacts
-- Continuous location updates
-- Enhanced personal safety monitoring
+- One-Tap SOS
+- Emergency Notifications
+- Live GPS Sharing
+- Guardian Alerts
+- Panic Group Support
 
 ---
 
-## 🛣 Safe Route Navigation
+# 📍 Smart Route Navigation
 
-- Intelligent route suggestions
-- Safer travel recommendations
-- Interactive maps using Leaflet
-- Navigation assistance
+Femigo helps users make safer travel decisions through AI-assisted navigation.
 
----
+Features include:
 
-## 🛡 Area Safety Scores
-
-- Safety ratings for surrounding areas
-- Better travel decision support
-- Increased situational awareness
+- Safe Route Suggestions
+- Interactive Maps
+- Route Planning
+- Lighting Awareness
+- Navigation Assistance
 
 ---
 
-## ❤️ Emotional Wellness
+# 🛡 Nearby Threat Detection
 
-- Daily emotional check-ins
-- Personal journaling
-- Mood tracking
-- Positive affirmations
-- Mental wellness support
+The application continuously improves situational awareness through intelligent monitoring features.
 
----
+Capabilities include:
 
-## 👥 Trusted Contacts
-
-- Manage emergency contacts
-- Quick communication during emergencies
-- Secure contact management
+- Nearby Person Detection
+- Threat Alerts
+- Vibration Notifications
+- Risk Awareness
 
 ---
 
-## 📚 Resources & Awareness
+# ❤️ Mental Wellness Center
 
-- Women's safety articles
-- Awareness content
-- Helpful recommendations
-- Educational resources
+Personal safety also includes emotional well-being.
+
+Femigo provides:
+
+- Daily Emotional Check-ins
+- Mood Tracking
+- Digital Journaling
+- Motivational Quotes
+- Wellness Support
+
+---
+
+# 👥 Trusted Contacts
+
+Users can create their own trusted safety network.
+
+Features include:
+
+- Guardian Management
+- Emergency Contact List
+- Instant SOS Notifications
+- Panic Groups
+
+---
+
+# 📝 Community Safety Reporting
+
+Users can contribute towards making communities safer by reporting incidents.
+
+Reports may include:
+
+- Unsafe Locations
+- Suspicious Activities
+- Public Safety Feedback
+
+---
+
+# 🧠 AI Safety Engine
+
+The AI Safety Engine acts as the intelligence layer of Femigo.
+
+It combines information from multiple modules to provide contextual safety assistance.
+
+Responsibilities include:
+
+- Safety Score Generation
+- Threat Analysis
+- Context-Aware Recommendations
+- Explainable AI Decisions
+
+---
+
+# ⚙️ Application Workflow
+
+```text
+User
+ │
+ ▼
+Live Selfie Capture
+ │
+ ▼
+AI Gender Verification
+ │
+ ▼
+Aadhaar Verification
+ │
+ ▼
+Face Match with Aadhaar Photo
+ │
+ ▼
+Name Match with Aadhaar Details
+ │
+ ▼
+Secure Login
+ │
+ ▼
+Home Dashboard
+ │
+ ├── Emergency SOS
+ ├── Smart Route Navigation
+ ├── Sangini AI
+ ├── Nearby Threat Detection
+ ├── Trusted Contacts
+ ├── Mental Wellness
+ └── Community Reports
+        │
+        ▼
+ AI Safety Engine
+        │
+        ▼
+ Personalized Safety Guidance
+```
 
 ---
 
 # 🏗 Tech Stack
 
-| Category | Technologies |
-|----------|--------------|
-| Frontend | Next.js 14, TypeScript |
+| Layer | Technologies |
+|--------|--------------|
+| Framework | Next.js 14 |
+| Language | TypeScript |
 | UI | Tailwind CSS, ShadCN UI |
 | Authentication | Firebase Authentication |
 | Database | Cloud Firestore |
 | Storage | Firebase Storage |
-| Maps & Navigation | Leaflet, OpenStreetMap |
-| AI Assistant | Botpress Studio |
+| Maps | Leaflet + OpenStreetMap |
+| Conversational AI | Botpress Studio |
 | AI Services | Gemini AI |
-
----
-
-# 🧠 System Architecture
-
-```text
-                 User
-                   │
-                   ▼
-            Femigo Mobile App
-                   │
-      ┌────────────┼────────────┐
-      │            │            │
-      ▼            ▼            ▼
- Emergency     Navigation    Sangini AI
- Services        Module      (Botpress)
-      │            │            │
-      └────────────┼────────────┘
-                   ▼
-        Firebase Backend Services
-```
 
 ---
 
@@ -148,56 +282,56 @@ Femigo/
 ├── hooks/
 ├── lib/
 ├── public/
-├── styles/
 ├── firebase/
 ├── utils/
+├── assets/
 ├── package.json
 └── README.md
 ```
 
 ---
 
-# 🚀 Core Functionalities
+# 🔒 Privacy & Security
 
-- AI-powered conversational assistant
-- Emergency SOS system
-- Live GPS location sharing
-- Safe navigation support
-- Trusted contact management
-- Area safety insights
-- Emotional wellness features
-- Secure cloud-based data management
+Security and privacy are fundamental design principles of Femigo.
 
----
+The platform incorporates:
 
-# 🔒 Security & Privacy
-
-Femigo prioritizes user privacy by implementing secure authentication and protected cloud storage for user data.
-
-Personal information and emergency contacts are managed securely using Firebase services, ensuring reliable authentication and controlled data access.
+- Secure Authentication
+- Protected Cloud Storage
+- Controlled Data Access
+- Firestore Security Rules
+- Trusted Contact Protection
+- Multi-Step Identity Verification
 
 ---
 
-# 🎯 Future Enhancements
+# 🚀 Future Enhancements
 
-- Voice-enabled AI conversations
-- Offline emergency mode
-- Wearable device integration
-- Community safety reporting
-- Predictive safety alerts
-- Multilingual AI assistant
-- AI-powered emergency risk detection
-- Real-time crime and incident awareness
+- Voice-enabled Sangini
+- Offline Emergency Mode
+- Smartwatch Integration
+- Crime Heatmaps
+- Predictive Threat Detection
+- AI Memory for Personalized Conversations
+- Regional Language Support
+- Community Safety Analytics
 
 ---
 
-# 👩‍💻 Developed By
+# 👩‍💻 Developer
 
 **Hiral Goyal**
 
-B.Tech Mathematics & Computing  
+B.Tech — Mathematics & Computing  
 Madhav Institute of Technology & Science (MITS), Gwalior
 
 ---
 
-### *Empowering women through intelligent technology, real-time safety, and compassionate AI.*
+<div align="center">
+
+### 🌸 Femigo is more than a safety application.
+
+### It is an intelligent companion built to help women feel safer, supported, and empowered every day.
+
+</div>
