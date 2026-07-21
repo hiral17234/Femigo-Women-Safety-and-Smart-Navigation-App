@@ -321,6 +321,7 @@ The platform incorporates:
 
 # 👩‍💻 Developer
 
+Built and maintained solely by
 **Hiral Goyal**
 
 B.Tech — Mathematics & Computing  
