@@ -5,6 +5,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/theme-provider";
+import { ConsoleCredit } from "@/components/console-credit";
 
 const fontPoppins = Poppins({
   subsets: ["latin"],
@@ -15,6 +16,7 @@ const fontPoppins = Poppins({
 export const metadata: Metadata = {
   title: "Femigo Companion",
   description: "Your trusted companion for safety and empowerment.",
+  authors: [{ name: "Hiral Goyal", url: "https://github.com/hiral17234" }],
 };
 
 export default function RootLayout({
@@ -32,8 +34,9 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange
         >
-          {children}
+         {children}
           <Toaster />
+          <ConsoleCredit />
         </ThemeProvider>
       </body>
     </html>
