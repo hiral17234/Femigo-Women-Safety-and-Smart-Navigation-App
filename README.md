@@ -322,7 +322,8 @@ The platform incorporates:
 # 👩‍💻 Developer
 
 Built and maintained solely by
-###**Hiral Goyal**
+
+### **Hiral Goyal**
 
 B.Tech — Mathematics & Computing  
 Madhav Institute of Technology & Science (MITS), Gwalior
